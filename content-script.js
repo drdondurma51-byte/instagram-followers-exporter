@@ -134,9 +134,9 @@ async function runFlow() {
     // If the user isn't visible in the current scroll position, scroll down
     // gradually until the user's row enters the DOM (virtual list).
     if (!ok && scrollable) {
-      for (let attempt = 0; attempt < 10 && !ok; attempt++) {
-        scrollable.scrollTop += 250;
-        await sleep(350);
+      for (let attempt = 0; attempt < 8 && !ok; attempt++) {
+        scrollable.scrollTop += 120;
+        await sleep(550);
         ok = clickFollowButton(item.username);
       }
     }
