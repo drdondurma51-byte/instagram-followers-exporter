@@ -250,47 +250,73 @@ function applyDecision(batch, decision) {
 
 // ---------------- MODAL + EXTRACTION ----------------
 function getActiveModal() {
-  let modal = document.querySelector('[role="dialog"]');
-  if (modal) return modal;
+  // Prefer the most recently opened dialog that contains a user list
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+  for (let i = dialogs.length - 1; i >= 0; i--) {
+    const d = dialogs[i];
+    if (d.querySelector('a[href^="/"]') && d.querySelector('button')) return d;
+  }
 
-  const dialogs = document.querySelectorAll('[role="dialog"]');
+  // Fallback: any dialog
   if (dialogs.length) return dialogs[dialogs.length - 1];
 
-  modal = document.querySelector('div[class*="Modal"]');
-  if (modal) return modal;
+  return (
+    document.querySelector('div[class*="Modal"]') ||
+    document.querySelector('[data-testid="modal"]') ||
+    null
+  );
+}
 
-  modal = document.querySelector('[data-testid="modal"]');
-  if (modal) return modal;
-
+// Walks up the DOM from el until it finds an ancestor that contains a button (max 6 levels)
+function findAncestorWithButton(el) {
+  let current = el.parentElement;
+  let depth = 0;
+  while (current && depth < 6) {
+    if (current.querySelector("button")) return current;
+    current = current.parentElement;
+    depth++;
+  }
   return null;
 }
 
-function extractUsersList(modal) {
+function extractUsersList(modal, mode) {
   const users = [];
   const seen = new Set();
 
-  let containers = modal.querySelectorAll("li");
-  if (!containers.length) containers = modal.querySelectorAll('div[role="presentation"]');
-  if (!containers.length) containers = modal.querySelectorAll("div");
+  // Anchor-first strategy: iterate all profile links inside the modal
+  const links = Array.from(modal.querySelectorAll('a[href^="/"]'));
 
-  containers.forEach((container) => {
+  for (const link of links) {
     try {
-      const link = container.querySelector('a[href^="/"]');
-      const button = container.querySelector("button");
-      if (!link || !button) return;
-
       const href = link.getAttribute("href") || "";
-      const username = (href.split("/")[1] || "").trim();
+      // Only root-level profile paths like /username/ or /username
+      const parts = href.split("/").filter(Boolean);
+      if (parts.length !== 1) continue;
 
-      if (!isValidUsername(username)) return;
-      if (seen.has(username)) return;
+      const username = parts[0].trim();
+      if (!isValidUsername(username)) continue;
+      if (seen.has(username)) continue;
+
+      // Find nearest ancestor that contains a button
+      const container =
+        link.closest("li") ||
+        link.closest('[role="listitem"]') ||
+        findAncestorWithButton(link);
+
+      if (!container) continue;
+
+      const button = container.querySelector("button");
+      if (!button) continue;
 
       const buttonText = (button.textContent || "").toLowerCase().trim();
       const alreadyFollowing =
         buttonText.includes("following") ||
         buttonText.includes("pending") ||
         buttonText.includes("requested") ||
-        buttonText.includes("takipte");
+        buttonText.includes("takipte") ||
+        buttonText.includes("takiptesin") ||
+        buttonText.includes("beklemede") ||
+        buttonText.includes("takip isteği");
 
       const score = scoreUser(username, alreadyFollowing);
       const risk = riskLevel(score);
@@ -304,18 +330,23 @@ function extractUsersList(modal) {
 
       seen.add(username);
     } catch (_) {}
-  });
+  }
 
   return users;
 }
 
 function isValidUsername(username) {
   if (!username) return false;
-  if (username.length < 2) return false;
+  if (username.length < 2 || username.length > 30) return false;
   if (!/^[a-zA-Z0-9._]+$/.test(username)) return false;
 
-  const blocked = new Set(["explore", "p", "direct", "stories", "notifications", "your", "accounts"]);
-  if (blocked.has(username)) return false;
+  const blocked = new Set([
+    "explore", "p", "direct", "stories", "notifications",
+    "your", "accounts", "reels", "reel", "tv", "about",
+    "privacy", "safety", "login", "signup", "challenge",
+    "api", "graphql", "static", "www"
+  ]);
+  if (blocked.has(username.toLowerCase())) return false;
 
   return true;
 }
@@ -343,31 +374,42 @@ function riskLevel(score) {
 // ---------------- FOLLOW CLICK ----------------
 function clickFollowButton(username) {
   try {
-    const links = document.querySelectorAll('a[href^="/"]');
+    // Search inside the active modal first; fall back to full document
+    const root = getActiveModal() || document;
+    const links = root.querySelectorAll('a[href^="/"]');
 
     for (const link of links) {
       const href = link.getAttribute("href") || "";
-      const linkUsername = href.split("/")[1] || "";
-      if (linkUsername !== username) continue;
+      const parts = href.split("/").filter(Boolean);
+      if (parts.length !== 1 || parts[0] !== username) continue;
 
       const container =
         link.closest("li") ||
-        link.closest('div[role="presentation"]') ||
-        link.closest('[role="dialog"] div');
+        link.closest('[role="listitem"]') ||
+        findAncestorWithButton(link);
 
       if (!container) continue;
 
       const button = container.querySelector("button");
       if (!button) continue;
 
-      const text = (button.textContent || "").toLowerCase();
+      const text = (button.textContent || "").toLowerCase().trim();
 
-      if (
-        text.includes("follow") &&
-        !text.includes("following") &&
-        !text.includes("pending") &&
-        !text.includes("requested")
-      ) {
+      const isFollowAction =
+        text.includes("follow") ||
+        text === "takip et" ||
+        text === "takip";
+
+      const isAlreadyFollowing =
+        text.includes("following") ||
+        text.includes("pending") ||
+        text.includes("requested") ||
+        text.includes("takiptesin") ||
+        text.includes("takipte") ||
+        text.includes("beklemede") ||
+        text.includes("takip isteği");
+
+      if (isFollowAction && !isAlreadyFollowing) {
         button.click();
         return true;
       }

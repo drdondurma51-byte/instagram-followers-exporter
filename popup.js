@@ -506,5 +506,5 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 function escapeAttr(s) {
-  return escapeHtml(s).replaceAll('"', "&quot;");
+  return escapeHtml(s);
 }
