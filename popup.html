@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IG Guarded Assistant</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="modal-container">
+    <div class="modal-header">
+      <h1>🛡️ IG Guarded Assistant</h1>
+      <p>20'li batch onay ile kontrollü akış</p>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="followers">👥 Takipçiler</button>
+      <button class="tab-btn" data-tab="likers">❤️ Beğenenler</button>
+    </div>
+
+    <div id="followers" class="tab-content active">
+      <div class="section">
+        <h2>📋 Kullanıcı Listesi</h2>
+        <div class="action-buttons">
+          <button id="loadFollowersList" class="btn btn-info">🔄 Listeyi Yükle</button>
+          <button id="refreshFollowersList" class="btn btn-secondary hidden">🔃 Yenile</button>
+        </div>
+        <div id="followersListPreview" class="list-preview"></div>
+      </div>
+
+      <div class="section">
+        <h2>⚙️ Ayarlar</h2>
+        <div class="setting">
+          <label>Batch boyutu</label>
+          <input type="number" id="followersBatchSize" min="5" max="50" value="20" />
+        </div>
+        <div class="setting">
+          <label>İşlem arası min gecikme (ms)</label>
+          <input type="number" id="followersActionDelayMin" min="1000" max="10000" value="1800" />
+        </div>
+        <div class="setting">
+          <label>İşlem arası max gecikme (ms)</label>
+          <input type="number" id="followersActionDelayMax" min="1200" max="15000" value="4200" />
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="buttons">
+          <button id="startFollowersBtn" class="btn btn-start">▶️ Başlat</button>
+          <button id="stopFollowersBtn" class="btn btn-stop hidden">⏹️ Durdur</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>📈 İlerleme</h2>
+        <div class="progress-container">
+          <div class="stat"><span class="label">Takip Edilecek</span><span class="value" id="followersTotalToFollow">0</span></div>
+          <div class="stat"><span class="label">Takip Edildi</span><span class="value" id="followersTrackedCount">0</span></div>
+          <div class="stat"><span class="label">Başarısız</span><span class="value" id="followersFailedCount">0</span></div>
+        </div>
+        <div class="progress-bar"><div id="followersProgressFill" class="progress-fill"></div></div>
+        <div id="followersStatus" class="status info"></div>
+      </div>
+    </div>
+
+    <div id="likers" class="tab-content">
+      <div class="section">
+        <h2>📋 Kullanıcı Listesi</h2>
+        <div class="action-buttons">
+          <button id="loadLikersList" class="btn btn-info">🔄 Listeyi Yükle</button>
+          <button id="refreshLikersList" class="btn btn-secondary hidden">🔃 Yenile</button>
+        </div>
+        <div id="likersListPreview" class="list-preview"></div>
+      </div>
+
+      <div class="section">
+        <h2>⚙️ Ayarlar</h2>
+        <div class="setting">
+          <label>Batch boyutu</label>
+          <input type="number" id="likersBatchSize" min="5" max="50" value="20" />
+        </div>
+        <div class="setting">
+          <label>İşlem arası min gecikme (ms)</label>
+          <input type="number" id="likersActionDelayMin" min="1000" max="10000" value="1800" />
+        </div>
+        <div class="setting">
+          <label>İşlem arası max gecikme (ms)</label>
+          <input type="number" id="likersActionDelayMax" min="1200" max="15000" value="4200" />
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="buttons">
+          <button id="startLikersBtn" class="btn btn-start">▶️ Başlat</button>
+          <button id="stopLikersBtn" class="btn btn-stop hidden">⏹️ Durdur</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>📈 İlerleme</h2>
+        <div class="progress-container">
+          <div class="stat"><span class="label">Takip Edilecek</span><span class="value" id="likersTotalToFollow">0</span></div>
+          <div class="stat"><span class="label">Takip Edildi</span><span class="value" id="likersTrackedCount">0</span></div>
+          <div class="stat"><span class="label">Başarısız</span><span class="value" id="likersFailedCount">0</span></div>
+        </div>
+        <div class="progress-bar"><div id="likersProgressFill" class="progress-fill"></div></div>
+        <div id="likersStatus" class="status info"></div>
+      </div>
+    </div>
+
+    <div id="batchApprovalSection" class="section batch-approval hidden">
+      <h2>🛡️ Batch Onay (20 kullanıcı)</h2>
+
+      <div class="batch-meta">
+        <span id="batchModeBadge" class="badge">Mode: -</span>
+        <span id="batchIdBadge" class="badge">Batch: -</span>
+        <span id="batchCountBadge" class="badge">0 kullanıcı</span>
+      </div>
+
+      <div id="batchUsersList" class="list-preview batch-list"></div>
+
+      <div class="setting">
+        <label>🎯 Skor filtresi (X ve üstü)</label>
+        <input type="number" id="batchMinScoreInput" min="0" max="100" value="70" />
+      </div>
+
+      <div class="batch-actions">
+        <button id="approveAllBatchBtn" class="btn btn-start">✅ 20'sini Onayla</button>
+        <button id="approveSelectedBatchBtn" class="btn btn-info">☑️ Seçtiklerini Onayla</button>
+        <button id="approveByScoreBatchBtn" class="btn btn-secondary">🎯 Skora Göre</button>
+      </div>
+      <div class="batch-actions">
+        <button id="skipBatchBtn" class="btn btn-secondary">⏭️ Batch'i Geç</button>
+        <button id="stopBatchFlowBtn" class="btn btn-stop">⏹️ Durdur</button>
+      </div>
+
+      <div id="batchStatus" class="status info">Batch kararı bekleniyor...</div>
+    </div>
+
+    <footer>
+      <small>⚠️ Kontrollü kullanım önerilir</small>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

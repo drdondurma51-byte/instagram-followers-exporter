@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Instagram Guarded Follow Assistant",
+  "version": "2.0.0",
+  "description": "Instagram kullanıcı listesini güvenli batch onayıyla yönetir.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.instagram.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "IG Guarded Assistant"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
