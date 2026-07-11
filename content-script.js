@@ -13,7 +13,8 @@ const FLOW = {
   actionDelayMax: 4200,
   sessionLimit: 100,
   consecutiveFailLimit: 5,
-  consecutiveFails: 0
+  consecutiveFails: 0,
+  scanStartScrollTop: 0
 };
 
 console.log("🚀 IG Auto Follow content-script loaded");
@@ -57,6 +58,8 @@ async function loadUsersList(mode, scrollSteps) {
       };
     }
 
+    const scrollable = findScrollableContainer(modal);
+    const scanStartScrollTop = Math.max(0, Number(scrollable?.scrollTop) || 0);
     const users = await autoScrollAndCollect(modal, scrollSteps, mode);
     if (!users.length) {
       return {
@@ -65,7 +68,7 @@ async function loadUsersList(mode, scrollSteps) {
       };
     }
 
-    return { success: true, mode, users };
+    return { success: true, mode, users, scanStartScrollTop };
   } catch (error) {
     return { success: false, error: `Liste yükleme hatası: ${error.message}` };
   }
@@ -78,7 +81,8 @@ async function startFlow(payload) {
     users,
     actionDelayMin = 1800,
     actionDelayMax = 4200,
-    sessionLimit = 100
+    sessionLimit = 100,
+    scanStartScrollTop
   } = payload || {};
 
   if (!Array.isArray(users) || users.length === 0) {
@@ -95,6 +99,7 @@ async function startFlow(payload) {
   FLOW.actionDelayMax = Number(actionDelayMax);
   FLOW.sessionLimit = Number(sessionLimit);
   FLOW.consecutiveFails = 0;
+  FLOW.scanStartScrollTop = Math.max(0, Number(scanStartScrollTop) || 0);
 
   runFlow().catch((e) => {
     safeSendMessage({ action: "flowError", mode: FLOW.mode, error: e.message });
@@ -106,12 +111,13 @@ async function startFlow(payload) {
 
 // ---------------- MAIN FLOW ----------------
 async function runFlow() {
-  // After collecting users by scrolling down, the modal's virtual list has
-  // removed the top users from the DOM. Scroll back to the top so the first
-  // queued users are rendered and clickable.
   const scrollable = getModalScrollable();
   if (scrollable) {
-    scrollable.scrollTop = 0;
+    const targetTop = Math.min(
+      Math.max(0, FLOW.scanStartScrollTop || 0),
+      Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
+    );
+    scrollable.scrollTop = targetTop;
     await sleep(600);
   }
 

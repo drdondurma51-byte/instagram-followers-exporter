@@ -7,7 +7,8 @@ let followersState = {
   trackedCount: 0,
   failedCount: 0,
   totalToFollow: 0,
-  usersList: []
+  usersList: [],
+  scanStartScrollTop: 0
 };
 
 let likersState = {
@@ -15,7 +16,8 @@ let likersState = {
   trackedCount: 0,
   failedCount: 0,
   totalToFollow: 0,
-  usersList: []
+  usersList: [],
+  scanStartScrollTop: 0
 };
 
 let activeMode = "followers";
@@ -155,6 +157,7 @@ function loadList(mode) {
         const state = mode === "followers" ? followersState : likersState;
         state.usersList = response.users || [];
         state.totalToFollow = state.usersList.filter((u) => u.status === "follow").length;
+        state.scanStartScrollTop = Math.max(0, Number(response.scanStartScrollTop) || 0);
 
         displayUsersList(mode);
         updateAllUI();
@@ -234,7 +237,8 @@ function startMode(mode) {
         users: candidates,
         actionDelayMin: cfg.actionDelayMin,
         actionDelayMax: cfg.actionDelayMax,
-        sessionLimit: 100
+        sessionLimit: 100,
+        scanStartScrollTop: Math.max(0, Number(state.scanStartScrollTop) || 0)
       },
       (response) => {
         if (chrome.runtime.lastError) {
