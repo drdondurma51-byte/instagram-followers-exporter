@@ -112,13 +112,20 @@ async function startFlow(payload) {
 // ---------------- MAIN FLOW ----------------
 async function runFlow() {
   const scrollable = getModalScrollable();
+  const successBatchSize = 5;
+  let successesInCurrentView = 0;
+  let shouldRepositionForNextItem = true;
+  let currentViewTop = Math.max(0, Number(FLOW.scanStartScrollTop) || 0);
+
   if (scrollable) {
-    const targetTop = Math.min(
-      Math.max(0, FLOW.scanStartScrollTop || 0),
+    const firstItemTop = FLOW.queue[0]?.scrollTop;
+    currentViewTop = Math.min(
+      Math.max(0, Number(firstItemTop ?? FLOW.scanStartScrollTop) || 0),
       Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
     );
-    scrollable.scrollTop = targetTop;
+    scrollable.scrollTop = currentViewTop;
     await sleep(600);
+    shouldRepositionForNextItem = false;
   }
 
   while (FLOW.isRunning && FLOW.queue.length > 0) {
@@ -130,26 +137,31 @@ async function runFlow() {
 
     const item = FLOW.queue.shift();
 
-    // Scroll to the exact position where this user was visible during collection.
-    // This ensures the virtual list renders the correct row before clicking.
-    if (scrollable && item.scrollTop !== undefined) {
-      const targetTop = Math.min(
-        Math.max(0, item.scrollTop),
+    // Stay in the current rendered region until 5 successful follows are completed.
+    if (scrollable && shouldRepositionForNextItem) {
+      currentViewTop = Math.min(
+        Math.max(0, Number(item.scrollTop ?? FLOW.scanStartScrollTop) || 0),
         Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
       );
-      scrollable.scrollTop = targetTop;
-      await sleep(500);
+      scrollable.scrollTop = currentViewTop;
+      await sleep(600);
+      shouldRepositionForNextItem = false;
     }
 
     let ok = clickFollowButton(item.username);
 
-    // Small tolerance scroll in case DOM reflow shifted things slightly.
+    // Small tolerance scroll within the current region only.
     if (!ok && scrollable) {
       for (let attempt = 0; attempt < 4 && !ok; attempt++) {
-        scrollable.scrollTop += 60;
-        await sleep(400);
+        scrollable.scrollTop = Math.min(
+          currentViewTop + ((attempt + 1) * 45),
+          Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
+        );
+        await sleep(450);
         ok = clickFollowButton(item.username);
       }
+
+      scrollable.scrollTop = currentViewTop;
     }
 
     FLOW.processed += 1;
@@ -157,6 +169,11 @@ async function runFlow() {
     if (ok) {
       FLOW.tracked += 1;
       FLOW.consecutiveFails = 0;
+      successesInCurrentView += 1;
+      if (successesInCurrentView >= successBatchSize) {
+        successesInCurrentView = 0;
+        shouldRepositionForNextItem = true;
+      }
     } else {
       FLOW.failed += 1;
       FLOW.consecutiveFails += 1;
