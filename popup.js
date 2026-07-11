@@ -201,13 +201,11 @@ function startMode(mode) {
     ? {
         actionDelayMin: num("followersActionDelayMin", 1800),
         actionDelayMax: num("followersActionDelayMax", 4200),
-        successBatchSize: num("followersSuccessBatchSize", 5),
         consecutiveFailLimit: num("followersConsecutiveFailLimit", 5)
       }
     : {
         actionDelayMin: num("likersActionDelayMin", 1800),
         actionDelayMax: num("likersActionDelayMax", 4200),
-        successBatchSize: num("likersSuccessBatchSize", 5),
         consecutiveFailLimit: num("likersConsecutiveFailLimit", 5)
       };
 
@@ -241,7 +239,6 @@ function startMode(mode) {
         users: candidates,
         actionDelayMin: cfg.actionDelayMin,
         actionDelayMax: cfg.actionDelayMax,
-        successBatchSize: cfg.successBatchSize,
         consecutiveFailLimit: cfg.consecutiveFailLimit,
         sessionLimit: 100,
         scanStartScrollTop: Math.max(0, Number(state.scanStartScrollTop) || 0)

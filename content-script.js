@@ -81,7 +81,6 @@ async function startFlow(payload) {
     users,
     actionDelayMin = 1800,
     actionDelayMax = 4200,
-    successBatchSize = 5,
     consecutiveFailLimit = 5,
     sessionLimit = 100,
     scanStartScrollTop
@@ -100,7 +99,6 @@ async function startFlow(payload) {
   FLOW.actionDelayMin = Number(actionDelayMin);
   FLOW.actionDelayMax = Number(actionDelayMax);
   FLOW.sessionLimit = Number(sessionLimit);
-  FLOW.successBatchSize = Math.max(1, Number(successBatchSize) || 5);
   FLOW.consecutiveFailLimit = Math.max(1, Number(consecutiveFailLimit) || 5);
   FLOW.consecutiveFails = 0;
   FLOW.scanStartScrollTop = Math.max(0, Number(scanStartScrollTop) || 0);
@@ -116,20 +114,6 @@ async function startFlow(payload) {
 // ---------------- MAIN FLOW ----------------
 async function runFlow() {
   const scrollable = getModalScrollable();
-  let successesInCurrentView = 0;
-  let shouldRepositionForNextItem = true;
-  let currentViewTop = Math.max(0, Number(FLOW.scanStartScrollTop) || 0);
-
-  if (scrollable) {
-    const firstItemTop = FLOW.queue[0]?.scrollTop;
-    currentViewTop = Math.min(
-      Math.max(0, Number(firstItemTop ?? FLOW.scanStartScrollTop) || 0),
-      Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
-    );
-    scrollable.scrollTop = currentViewTop;
-    await sleep(600);
-    shouldRepositionForNextItem = false;
-  }
 
   while (FLOW.isRunning && FLOW.queue.length > 0) {
     if (FLOW.processed >= FLOW.sessionLimit) {
@@ -140,43 +124,22 @@ async function runFlow() {
 
     const item = FLOW.queue.shift();
 
-    // Stay in the current rendered region until successBatchSize successful follows are completed.
-    if (scrollable && shouldRepositionForNextItem) {
-      currentViewTop = Math.min(
-        Math.max(0, Number(item.scrollTop ?? FLOW.scanStartScrollTop) || 0),
+    // Scroll to the exact position where this user was collected, then wait for DOM to render.
+    if (scrollable) {
+      scrollable.scrollTop = Math.min(
+        Math.max(0, Number(item.scrollTop) || 0),
         Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
       );
-      scrollable.scrollTop = currentViewTop;
-      await sleep(600);
-      shouldRepositionForNextItem = false;
+      await sleep(3000);
     }
 
-    let ok = clickFollowButton(item.username);
-
-    // Small tolerance scroll within the current region only.
-    if (!ok && scrollable) {
-      for (let attempt = 0; attempt < 4 && !ok; attempt++) {
-        scrollable.scrollTop = Math.min(
-          currentViewTop + ((attempt + 1) * 45),
-          Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
-        );
-        await sleep(450);
-        ok = clickFollowButton(item.username);
-      }
-
-      scrollable.scrollTop = currentViewTop;
-    }
+    const ok = clickFollowButton(item.username);
 
     FLOW.processed += 1;
 
     if (ok) {
       FLOW.tracked += 1;
       FLOW.consecutiveFails = 0;
-      successesInCurrentView += 1;
-      if (successesInCurrentView >= FLOW.successBatchSize) {
-        successesInCurrentView = 0;
-        shouldRepositionForNextItem = true;
-      }
     } else {
       FLOW.failed += 1;
       FLOW.consecutiveFails += 1;
