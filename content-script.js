@@ -215,11 +215,12 @@ function findButtonNearLink(link) {
 function extractUsersList(modal) {
   const users = [];
   const seen = new Set();
-  collectFromModal(modal, seen, users);
+  const scrollable = findScrollableContainer(modal);
+  collectFromModal(modal, seen, users, scrollable);
   return users;
 }
 
-function collectFromModal(modal, seen, users, scrollTop) {
+function collectFromModal(modal, seen, users, scrollable) {
   let added = 0;
   for (const link of modal.querySelectorAll('a[href^="/"]')) {
     try {
@@ -241,12 +242,24 @@ function collectFromModal(modal, seen, users, scrollTop) {
           t.includes("takip isteği");
       }
 
-      users.push({ username, status: alreadyFollowing ? "following" : "follow", scrollTop: scrollTop || 0 });
+      const scrollTop = getElementScrollOffset(link, scrollable);
+      users.push({ username, status: alreadyFollowing ? "following" : "follow", scrollTop });
       seen.add(username);
       added++;
     } catch (_) {}
   }
   return added;
+}
+
+function getElementScrollOffset(link, scrollable) {
+  try {
+    if (!scrollable) return 0;
+    const linkRect = link.getBoundingClientRect();
+    const containerRect = scrollable.getBoundingClientRect();
+    return Math.max(0, scrollable.scrollTop + (linkRect.top - containerRect.top));
+  } catch (_) {
+    return scrollable ? (scrollable.scrollTop || 0) : 0;
+  }
 }
 
 async function autoScrollAndCollect(modal, maxSteps, mode) {
@@ -255,8 +268,7 @@ async function autoScrollAndCollect(modal, maxSteps, mode) {
   const scrollable = findScrollableContainer(modal);
 
   for (let step = 0; step < maxSteps; step++) {
-    const currentScrollTop = scrollable ? (scrollable.scrollTop || 0) : 0;
-    const added = collectFromModal(modal, seen, users, currentScrollTop);
+    const added = collectFromModal(modal, seen, users, scrollable);
 
     await safeSendMessage({
       action: "listLoadProgress",
@@ -274,8 +286,7 @@ async function autoScrollAndCollect(modal, maxSteps, mode) {
   }
 
   // Final collect after last scroll
-  const finalScrollTop = scrollable ? (scrollable.scrollTop || 0) : 0;
-  collectFromModal(modal, seen, users, finalScrollTop);
+  collectFromModal(modal, seen, users, scrollable);
   return users;
 }
 
