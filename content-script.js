@@ -91,7 +91,7 @@ async function startFlow(payload) {
 
   FLOW.isRunning = true;
   FLOW.mode = mode || "followers";
-  FLOW.queue = users.map((u) => ({ username: u.username }));
+  FLOW.queue = users.map((u) => ({ username: u.username, scrollTop: u.scrollTop || 0 }));
   FLOW.processed = 0;
   FLOW.tracked = 0;
   FLOW.failed = 0;
@@ -129,14 +129,25 @@ async function runFlow() {
     }
 
     const item = FLOW.queue.shift();
+
+    // Scroll to the exact position where this user was visible during collection.
+    // This ensures the virtual list renders the correct row before clicking.
+    if (scrollable && item.scrollTop !== undefined) {
+      const targetTop = Math.min(
+        Math.max(0, item.scrollTop),
+        Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
+      );
+      scrollable.scrollTop = targetTop;
+      await sleep(500);
+    }
+
     let ok = clickFollowButton(item.username);
 
-    // If the user isn't visible in the current scroll position, scroll down
-    // gradually until the user's row enters the DOM (virtual list).
+    // Small tolerance scroll in case DOM reflow shifted things slightly.
     if (!ok && scrollable) {
-      for (let attempt = 0; attempt < 8 && !ok; attempt++) {
-        scrollable.scrollTop += 120;
-        await sleep(550);
+      for (let attempt = 0; attempt < 4 && !ok; attempt++) {
+        scrollable.scrollTop += 60;
+        await sleep(400);
         ok = clickFollowButton(item.username);
       }
     }
@@ -225,7 +236,7 @@ function extractUsersList(modal) {
   return users;
 }
 
-function collectFromModal(modal, seen, users) {
+function collectFromModal(modal, seen, users, scrollTop) {
   let added = 0;
   for (const link of modal.querySelectorAll('a[href^="/"]')) {
     try {
@@ -247,7 +258,7 @@ function collectFromModal(modal, seen, users) {
           t.includes("takip isteği");
       }
 
-      users.push({ username, status: alreadyFollowing ? "following" : "follow" });
+      users.push({ username, status: alreadyFollowing ? "following" : "follow", scrollTop: scrollTop || 0 });
       seen.add(username);
       added++;
     } catch (_) {}
@@ -261,7 +272,8 @@ async function autoScrollAndCollect(modal, maxSteps, mode) {
   const scrollable = findScrollableContainer(modal);
 
   for (let step = 0; step < maxSteps; step++) {
-    const added = collectFromModal(modal, seen, users);
+    const currentScrollTop = scrollable ? (scrollable.scrollTop || 0) : 0;
+    const added = collectFromModal(modal, seen, users, currentScrollTop);
 
     await safeSendMessage({
       action: "listLoadProgress",
@@ -279,7 +291,8 @@ async function autoScrollAndCollect(modal, maxSteps, mode) {
   }
 
   // Final collect after last scroll
-  collectFromModal(modal, seen, users);
+  const finalScrollTop = scrollable ? (scrollable.scrollTop || 0) : 0;
+  collectFromModal(modal, seen, users, finalScrollTop);
   return users;
 }
 
