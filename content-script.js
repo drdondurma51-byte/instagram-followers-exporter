@@ -141,9 +141,10 @@ async function runFlow() {
 // ---------------- MODAL + EXTRACTION ----------------
 function getActiveModal() {
   const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+  // Prefer a dialog that has profile links; buttons are not required
   for (let i = dialogs.length - 1; i >= 0; i--) {
     const d = dialogs[i];
-    if (d.querySelector('a[href^="/"]') && d.querySelector('button')) return d;
+    if (d.querySelector('a[href^="/"]')) return d;
   }
   if (dialogs.length) return dialogs[dialogs.length - 1];
   return (
@@ -156,10 +157,36 @@ function getActiveModal() {
 function findAncestorWithButton(el) {
   let current = el.parentElement;
   let depth = 0;
-  while (current && depth < 6) {
+  while (current && depth < 12) {
     if (current.querySelector("button")) return current;
     current = current.parentElement;
     depth++;
+  }
+  return null;
+}
+
+function findButtonNearLink(link) {
+  // 1. Direct ancestor containing a button
+  const ancestor = findAncestorWithButton(link);
+  if (ancestor) {
+    const btn = ancestor.querySelector("button");
+    if (btn) return btn;
+  }
+  // 2. Sibling elements of the link's parent
+  const parent = link.parentElement;
+  if (parent) {
+    let sibling = parent.nextElementSibling;
+    while (sibling) {
+      const btn = sibling.tagName === "BUTTON" ? sibling : sibling.querySelector("button");
+      if (btn) return btn;
+      sibling = sibling.nextElementSibling;
+    }
+    sibling = parent.previousElementSibling;
+    while (sibling) {
+      const btn = sibling.tagName === "BUTTON" ? sibling : sibling.querySelector("button");
+      if (btn) return btn;
+      sibling = sibling.previousElementSibling;
+    }
   }
   return null;
 }
@@ -179,25 +206,21 @@ function extractUsersList(modal) {
       if (!isValidUsername(username)) continue;
       if (seen.has(username)) continue;
 
-      const container =
-        link.closest("li") ||
-        link.closest('[role="listitem"]') ||
-        findAncestorWithButton(link);
+      // Find button via ancestor or sibling — not a hard requirement
+      const button = findButtonNearLink(link);
 
-      if (!container) continue;
-
-      const button = container.querySelector("button");
-      if (!button) continue;
-
-      const buttonText = (button.textContent || "").toLowerCase().trim();
-      const alreadyFollowing =
-        buttonText.includes("following") ||
-        buttonText.includes("pending") ||
-        buttonText.includes("requested") ||
-        buttonText.includes("takipte") ||
-        buttonText.includes("takiptesin") ||
-        buttonText.includes("beklemede") ||
-        buttonText.includes("takip isteği");
+      let alreadyFollowing = false;
+      if (button) {
+        const buttonText = (button.textContent || "").toLowerCase().trim();
+        alreadyFollowing =
+          buttonText.includes("following") ||
+          buttonText.includes("pending") ||
+          buttonText.includes("requested") ||
+          buttonText.includes("takipte") ||
+          buttonText.includes("takiptesin") ||
+          buttonText.includes("beklemede") ||
+          buttonText.includes("takip isteği");
+      }
 
       users.push({
         username,
@@ -238,14 +261,7 @@ function clickFollowButton(username) {
       const parts = href.split("/").filter(Boolean);
       if (parts.length !== 1 || parts[0] !== username) continue;
 
-      const container =
-        link.closest("li") ||
-        link.closest('[role="listitem"]') ||
-        findAncestorWithButton(link);
-
-      if (!container) continue;
-
-      const button = container.querySelector("button");
+      const button = findButtonNearLink(link);
       if (!button) continue;
 
       const text = (button.textContent || "").toLowerCase().trim();
