@@ -106,6 +106,15 @@ async function startFlow(payload) {
 
 // ---------------- MAIN FLOW ----------------
 async function runFlow() {
+  // After collecting users by scrolling down, the modal's virtual list has
+  // removed the top users from the DOM. Scroll back to the top so the first
+  // queued users are rendered and clickable.
+  const scrollable = getModalScrollable();
+  if (scrollable) {
+    scrollable.scrollTop = 0;
+    await sleep(600);
+  }
+
   while (FLOW.isRunning && FLOW.queue.length > 0) {
     if (FLOW.processed >= FLOW.sessionLimit) {
       await emitStatus("Session limiti doldu, akış durduruldu.", "info");
@@ -114,7 +123,18 @@ async function runFlow() {
     }
 
     const item = FLOW.queue.shift();
-    const ok = clickFollowButton(item.username);
+    let ok = clickFollowButton(item.username);
+
+    // If the user isn't visible in the current scroll position, scroll down
+    // gradually until the user's row enters the DOM (virtual list).
+    if (!ok && scrollable) {
+      for (let attempt = 0; attempt < 10 && !ok; attempt++) {
+        scrollable.scrollTop += 250;
+        await sleep(350);
+        ok = clickFollowButton(item.username);
+      }
+    }
+
     FLOW.processed += 1;
 
     if (ok) {
@@ -289,6 +309,11 @@ function isValidUsername(username) {
 }
 
 // ---------------- FOLLOW CLICK ----------------
+function getModalScrollable() {
+  const modal = getActiveModal();
+  return modal ? findScrollableContainer(modal) : null;
+}
+
 function clickFollowButton(username) {
   try {
     const root = getActiveModal() || document;
