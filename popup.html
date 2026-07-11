@@ -10,12 +10,13 @@
   <div class="modal-container">
     <div class="modal-header">
       <h1>🤝 IG Auto Follow</h1>
-      <p>Otomatik takip asistanı</p>
+      <p>Otomatik takip asistanı v3.1</p>
     </div>
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="followers">👥 Takipçiler</button>
       <button class="tab-btn" data-tab="likers">❤️ Beğenenler</button>
+      <button class="tab-btn" data-tab="log">📋 Günlük</button>
     </div>
 
     <!-- FOLLOWERS TAB -->
@@ -23,6 +24,11 @@
       <div class="section">
         <h2>📋 Kullanıcı Listesi</h2>
         <p class="hint">Instagram'da takipçi/beğeni modalını aç, sonra listeyi yükle.</p>
+        <div class="scroll-steps-row">
+          <label for="followersScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="followersScrollSteps" min="1" max="50" value="15" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
         <div class="action-buttons">
           <button id="loadFollowersList" class="btn btn-info">🔄 Listeyi Yükle</button>
           <button id="refreshFollowersList" class="btn btn-secondary hidden">🔃 Yenile</button>
@@ -68,6 +74,11 @@
       <div class="section">
         <h2>📋 Kullanıcı Listesi</h2>
         <p class="hint">Instagram'da beğeni listesi modalını aç, sonra yükle.</p>
+        <div class="scroll-steps-row">
+          <label for="likersScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="likersScrollSteps" min="1" max="50" value="15" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
         <div class="action-buttons">
           <button id="loadLikersList" class="btn btn-info">🔄 Listeyi Yükle</button>
           <button id="refreshLikersList" class="btn btn-secondary hidden">🔃 Yenile</button>
@@ -105,6 +116,18 @@
         </div>
         <div class="progress-bar"><div id="likersProgressFill" class="progress-fill"></div></div>
         <div id="likersStatus" class="status info"></div>
+      </div>
+    </div>
+
+    <!-- LOG TAB -->
+    <div id="log" class="tab-content">
+      <div class="section log-section">
+        <div class="log-header">
+          <h2>📋 Aktivite Günlüğü</h2>
+          <button id="clearLogBtn" class="btn btn-secondary btn-sm">🗑️ Temizle</button>
+        </div>
+        <p class="hint">Takip işlemleri, hatalar ve sistem bildirimleri burada listelenir.</p>
+        <div id="logList" class="log-list"></div>
       </div>
     </div>
 

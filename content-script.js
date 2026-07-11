@@ -23,8 +23,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const action = request?.action;
 
   if (action === "loadUsersList") {
-    const result = loadUsersList(request.mode);
-    sendResponse(result);
+    loadUsersList(request.mode, request.scrollSteps || 15)
+      .then(result => sendResponse(result))
+      .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
@@ -46,7 +47,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ---------------- LIST LOAD ----------------
-function loadUsersList(mode) {
+async function loadUsersList(mode, scrollSteps) {
   try {
     const modal = getActiveModal();
     if (!modal) {
@@ -56,7 +57,7 @@ function loadUsersList(mode) {
       };
     }
 
-    const users = extractUsersList(modal);
+    const users = await autoScrollAndCollect(modal, scrollSteps, mode);
     if (!users.length) {
       return {
         success: false,
@@ -194,44 +195,81 @@ function findButtonNearLink(link) {
 function extractUsersList(modal) {
   const users = [];
   const seen = new Set();
-  const links = Array.from(modal.querySelectorAll('a[href^="/"]'));
+  collectFromModal(modal, seen, users);
+  return users;
+}
 
-  for (const link of links) {
+function collectFromModal(modal, seen, users) {
+  let added = 0;
+  for (const link of modal.querySelectorAll('a[href^="/"]')) {
     try {
       const href = link.getAttribute("href") || "";
       const parts = href.split("/").filter(Boolean);
       if (parts.length !== 1) continue;
 
       const username = parts[0].trim();
-      if (!isValidUsername(username)) continue;
-      if (seen.has(username)) continue;
+      if (!isValidUsername(username) || seen.has(username)) continue;
 
-      // Find button via ancestor or sibling — not a hard requirement
       const button = findButtonNearLink(link);
-
       let alreadyFollowing = false;
       if (button) {
-        const buttonText = (button.textContent || "").toLowerCase().trim();
+        const t = (button.textContent || "").toLowerCase().trim();
         alreadyFollowing =
-          buttonText.includes("following") ||
-          buttonText.includes("pending") ||
-          buttonText.includes("requested") ||
-          buttonText.includes("takipte") ||
-          buttonText.includes("takiptesin") ||
-          buttonText.includes("beklemede") ||
-          buttonText.includes("takip isteği");
+          t.includes("following") || t.includes("pending") ||
+          t.includes("requested") || t.includes("takipte") ||
+          t.includes("takiptesin") || t.includes("beklemede") ||
+          t.includes("takip isteği");
       }
 
-      users.push({
-        username,
-        status: alreadyFollowing ? "following" : "follow"
-      });
-
+      users.push({ username, status: alreadyFollowing ? "following" : "follow" });
       seen.add(username);
+      added++;
     } catch (_) {}
   }
+  return added;
+}
 
+async function autoScrollAndCollect(modal, maxSteps, mode) {
+  const seen = new Set();
+  const users = [];
+  const scrollable = findScrollableContainer(modal);
+
+  for (let step = 0; step < maxSteps; step++) {
+    const added = collectFromModal(modal, seen, users);
+
+    await safeSendMessage({
+      action: "listLoadProgress",
+      mode,
+      step: step + 1,
+      maxSteps,
+      collected: users.length
+    });
+
+    // After step 2, stop if no new users were found (reached list end)
+    if (step >= 2 && added === 0) break;
+
+    scrollable.scrollTop += 400;
+    await sleep(rand(650, 950));
+  }
+
+  // Final collect after last scroll
+  collectFromModal(modal, seen, users);
   return users;
+}
+
+function findScrollableContainer(modal) {
+  let best = null;
+  let bestScrollHeight = 0;
+  for (const div of modal.querySelectorAll("div")) {
+    const overflow = window.getComputedStyle(div).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && div.scrollHeight > div.clientHeight + 50) {
+      if (div.scrollHeight > bestScrollHeight) {
+        best = div;
+        bestScrollHeight = div.scrollHeight;
+      }
+    }
+  }
+  return best || modal;
 }
 
 function isValidUsername(username) {

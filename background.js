@@ -29,3 +29,21 @@ chrome.runtime.onInstalled.addListener(() => {
     }
   });
 });
+
+// When the popup is closed, persist flow completion so popup shows correct state on reopen
+chrome.runtime.onMessage.addListener((request) => {
+  const action = request?.action;
+
+  if (action === "flowDone" || action === "flowError") {
+    const mode = request.mode;
+    if (!mode) return;
+    const key = mode === "followers" ? "followersState" : "likersState";
+    chrome.storage.local.get([key], (res) => {
+      const state = { ...(res[key] || {}) };
+      state.isRunning = false;
+      if (request.trackedCount !== undefined) state.trackedCount = request.trackedCount;
+      if (request.failedCount !== undefined) state.failedCount = request.failedCount;
+      chrome.storage.local.set({ [key]: state });
+    });
+  }
+});

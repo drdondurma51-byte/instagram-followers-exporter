@@ -19,21 +19,30 @@ let likersState = {
 };
 
 let activeMode = "followers";
+let activityLog = [];
 
 // ---------------- INIT ----------------
 document.addEventListener("DOMContentLoaded", () => {
-  chrome.storage.local.get(["followersState", "likersState"], (res) => {
+  chrome.storage.local.get(["followersState", "likersState", "activityLog"], (res) => {
     if (res.followersState) followersState = res.followersState;
     if (res.likersState) likersState = res.likersState;
+    if (Array.isArray(res.activityLog)) activityLog = res.activityLog;
 
     bindUI();
     updateAllUI();
+    renderLog();
   });
 });
 
 // ---------------- MESSAGE LISTENER ----------------
 chrome.runtime.onMessage.addListener((request) => {
   const action = request?.action;
+
+  if (action === "listLoadProgress") {
+    const mode = request.mode || activeMode;
+    const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
+    showStatus(statusId, `⏳ Kaydırılıyor... ${request.step}/${request.maxSteps} — ${request.collected} kullanıcı bulundu`, "info");
+  }
 
   if (action === "updateFollowersProgress") {
     followersState.trackedCount = request.trackedCount || 0;
@@ -57,6 +66,8 @@ chrome.runtime.onMessage.addListener((request) => {
     const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
     showStatus(statusId, "✅ Akış tamamlandı", "success");
 
+    appendLog("success", `✅ [${modeLabel(mode)}] Akış tamamlandı — ${request.trackedCount || 0} takip, ${request.failedCount || 0} başarısız`);
+
     updateAllUI();
     saveStates();
   }
@@ -67,6 +78,9 @@ chrome.runtime.onMessage.addListener((request) => {
     state.isRunning = false;
     const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
     showStatus(statusId, `❌ ${request.error || "Akış hatası"}`, "error");
+
+    appendLog("error", `❌ [${modeLabel(mode)}] Hata: ${request.error || "bilinmeyen hata"}`);
+
     updateAllUI();
     saveStates();
   }
@@ -76,6 +90,8 @@ chrome.runtime.onMessage.addListener((request) => {
     const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
     const type = request.level === "error" ? "error" : request.level === "success" ? "success" : "info";
     showStatus(statusId, request.message || "", type);
+
+    appendLog(type, `[${modeLabel(mode)}] ${request.message || ""}`);
   }
 });
 
@@ -94,6 +110,8 @@ function bindUI() {
   byId("refreshLikersList").addEventListener("click", () => loadList("likers"));
   byId("startLikersBtn").addEventListener("click", () => startMode("likers"));
   byId("stopLikersBtn").addEventListener("click", () => stopMode("likers"));
+
+  byId("clearLogBtn").addEventListener("click", clearLog);
 }
 
 // ---------------- TABS ----------------
@@ -108,25 +126,29 @@ function switchTab(tab) {
 // ---------------- LIST LOAD ----------------
 function loadList(mode) {
   const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
-  showStatus(statusId, "⏳ Liste yükleniyor...", "info");
+  const scrollSteps = num(mode === "followers" ? "followersScrollSteps" : "likersScrollSteps", 15);
+  showStatus(statusId, `⏳ Liste yükleniyor... (${scrollSteps} adım)`, "info");
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs?.length) {
       showStatus(statusId, "❌ Aktif sekme bulunamadı", "error");
+      appendLog("error", `[${modeLabel(mode)}] Aktif sekme bulunamadı`);
       return;
     }
 
     chrome.tabs.sendMessage(
       tabs[0].id,
-      { action: "loadUsersList", mode },
+      { action: "loadUsersList", mode, scrollSteps },
       (response) => {
         if (chrome.runtime.lastError) {
           showStatus(statusId, "❌ Content script erişilemedi. Instagram sekmesini yenile.", "error");
+          appendLog("error", `[${modeLabel(mode)}] Content script erişilemedi`);
           return;
         }
 
         if (!response?.success) {
           showStatus(statusId, `❌ ${response?.error || "Liste alınamadı"}`, "error");
+          appendLog("error", `[${modeLabel(mode)}] Liste alınamadı: ${response?.error || "bilinmeyen hata"}`);
           return;
         }
 
@@ -138,11 +160,9 @@ function loadList(mode) {
         updateAllUI();
         saveStates();
 
-        showStatus(
-          statusId,
-          `✅ ${state.usersList.length} kullanıcı yüklendi — ${state.totalToFollow} kişi takip edilecek`,
-          "success"
-        );
+        const msg = `✅ ${state.usersList.length} kullanıcı yüklendi — ${state.totalToFollow} kişi takip edilecek`;
+        showStatus(statusId, msg, "success");
+        appendLog("success", `[${modeLabel(mode)}] ${state.usersList.length} kullanıcı yüklendi, ${state.totalToFollow} takip adayı`);
       }
     );
   });
@@ -195,11 +215,14 @@ function startMode(mode) {
   updateAllUI();
   saveStates();
 
+  appendLog("info", `▶️ [${modeLabel(mode)}] Akış başlatıldı — ${candidates.length} kullanıcı`);
+
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs?.length) {
       state.isRunning = false;
       updateAllUI();
       showStatus(statusId, "❌ Aktif sekme bulunamadı", "error");
+      appendLog("error", `[${modeLabel(mode)}] Başlatılamadı: aktif sekme yok`);
       return;
     }
 
@@ -219,6 +242,7 @@ function startMode(mode) {
           updateAllUI();
           saveStates();
           showStatus(statusId, "❌ Başlatılamadı. Instagram sekmesini yenile.", "error");
+          appendLog("error", `[${modeLabel(mode)}] Başlatılamadı: content script erişilemedi`);
           return;
         }
 
@@ -227,6 +251,7 @@ function startMode(mode) {
           updateAllUI();
           saveStates();
           showStatus(statusId, `❌ ${response?.error || "Başlatılamadı"}`, "error");
+          appendLog("error", `[${modeLabel(mode)}] Başlatılamadı: ${response?.error || "bilinmeyen"}`);
           return;
         }
 
@@ -242,6 +267,7 @@ function stopMode(mode) {
 
   const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
   showStatus(statusId, "⏹️ Durduruldu", "error");
+  appendLog("info", `⏹️ [${modeLabel(mode)}] Akış kullanıcı tarafından durduruldu`);
 
   updateAllUI();
   saveStates();
@@ -306,6 +332,41 @@ function saveStates() {
   chrome.storage.local.set({ followersState, likersState });
 }
 
+// ---------------- LOG ----------------
+function appendLog(type, message) {
+  const entry = { time: Date.now(), type, message };
+  activityLog.unshift(entry);
+  if (activityLog.length > 200) activityLog.length = 200;
+  chrome.storage.local.set({ activityLog });
+  renderLog();
+}
+
+function renderLog() {
+  const list = byId("logList");
+  if (!list) return;
+
+  if (!activityLog.length) {
+    list.innerHTML = '<div class="log-empty">Henüz kayıt yok.</div>';
+    return;
+  }
+
+  list.innerHTML = activityLog.map((entry) => {
+    const d = new Date(entry.time);
+    const time = d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" })
+      + " " + d.toTimeString().slice(0, 8);
+    return `<div class="log-entry log-${entry.type}">
+      <span class="log-time">${escapeHtml(time)}</span>
+      <span class="log-msg">${escapeHtml(entry.message)}</span>
+    </div>`;
+  }).join("");
+}
+
+function clearLog() {
+  activityLog = [];
+  chrome.storage.local.set({ activityLog: [] });
+  renderLog();
+}
+
 // ---------------- HELPERS ----------------
 function byId(id) { return document.getElementById(id); }
 function num(id, fallback) {
@@ -319,4 +380,7 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+function modeLabel(mode) {
+  return mode === "followers" ? "Takipçiler" : "Beğenenler";
 }
