@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Instagram Guarded Follow Assistant",
-  "version": "2.0.0",
-  "description": "Instagram kullanıcı listesini güvenli batch onayıyla yönetir.",
+  "name": "Instagram Auto Follow",
+  "version": "3.0.0",
+  "description": "Instagram takipçiler ve beğenenler listesinden otomatik takip atar.",
   "permissions": [
     "activeTab",
     "storage",
@@ -13,7 +13,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "IG Guarded Assistant"
+    "default_title": "IG Auto Follow"
   },
   "content_scripts": [
     {
