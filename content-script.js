@@ -129,29 +129,24 @@ async function runFlow() {
     }
 
     const item = FLOW.queue.shift();
-    // clickFollowButton returns "clicked" | "already" | "notfound"
-    let result = clickFollowButton(item.username);
+    let ok = clickFollowButton(item.username);
 
-    // If user row not in current viewport, scroll down gradually (virtual list).
-    // Limit to 5 steps × 150 px to avoid corrupting position for later users.
-    if (result === "notfound" && scrollable) {
-      for (let attempt = 0; attempt < 5 && result === "notfound"; attempt++) {
-        scrollable.scrollTop += 150;
-        await sleep(300);
-        result = clickFollowButton(item.username);
+    // If the user isn't visible in the current scroll position, scroll down
+    // gradually until the user's row enters the DOM (virtual list).
+    if (!ok && scrollable) {
+      for (let attempt = 0; attempt < 10 && !ok; attempt++) {
+        scrollable.scrollTop += 250;
+        await sleep(350);
+        ok = clickFollowButton(item.username);
       }
     }
 
     FLOW.processed += 1;
 
-    if (result === "clicked") {
+    if (ok) {
       FLOW.tracked += 1;
       FLOW.consecutiveFails = 0;
-    } else if (result === "already") {
-      // User is already being followed — not an error, skip without penalty
-      FLOW.consecutiveFails = 0;
     } else {
-      // "notfound" — genuine failure
       FLOW.failed += 1;
       FLOW.consecutiveFails += 1;
     }
@@ -325,7 +320,6 @@ function getModalScrollable() {
   return modal ? findScrollableContainer(modal) : null;
 }
 
-// Returns "clicked" | "already" | "notfound"
 function clickFollowButton(username) {
   try {
     const root = getActiveModal() || document;
@@ -341,7 +335,11 @@ function clickFollowButton(username) {
 
       const text = (button.textContent || "").toLowerCase().trim();
 
-      // Check already-following state first so we never misclassify it
+      const isFollowAction =
+        text.includes("follow") ||
+        text === "takip et" ||
+        text === "takip";
+
       const isAlreadyFollowing =
         text.includes("following") ||
         text.includes("pending") ||
@@ -351,23 +349,15 @@ function clickFollowButton(username) {
         text.includes("beklemede") ||
         text.includes("takip isteği");
 
-      if (isAlreadyFollowing) return "already";
-
-      // Use includes (not exact match) to handle button text with icons/extra whitespace
-      const isFollowAction =
-        text.includes("follow") ||
-        text.includes("takip et") ||
-        text.includes("takip");
-
-      if (isFollowAction) {
+      if (isFollowAction && !isAlreadyFollowing) {
         button.click();
-        return "clicked";
+        return true;
       }
     }
 
-    return "notfound";
+    return false;
   } catch (_) {
-    return "notfound";
+    return false;
   }
 }
 
