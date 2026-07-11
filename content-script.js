@@ -81,6 +81,8 @@ async function startFlow(payload) {
     users,
     actionDelayMin = 1800,
     actionDelayMax = 4200,
+    successBatchSize = 5,
+    consecutiveFailLimit = 5,
     sessionLimit = 100,
     scanStartScrollTop
   } = payload || {};
@@ -98,6 +100,8 @@ async function startFlow(payload) {
   FLOW.actionDelayMin = Number(actionDelayMin);
   FLOW.actionDelayMax = Number(actionDelayMax);
   FLOW.sessionLimit = Number(sessionLimit);
+  FLOW.successBatchSize = Math.max(1, Number(successBatchSize) || 5);
+  FLOW.consecutiveFailLimit = Math.max(1, Number(consecutiveFailLimit) || 5);
   FLOW.consecutiveFails = 0;
   FLOW.scanStartScrollTop = Math.max(0, Number(scanStartScrollTop) || 0);
 
@@ -112,7 +116,6 @@ async function startFlow(payload) {
 // ---------------- MAIN FLOW ----------------
 async function runFlow() {
   const scrollable = getModalScrollable();
-  const successBatchSize = 5;
   let successesInCurrentView = 0;
   let shouldRepositionForNextItem = true;
   let currentViewTop = Math.max(0, Number(FLOW.scanStartScrollTop) || 0);
@@ -137,7 +140,7 @@ async function runFlow() {
 
     const item = FLOW.queue.shift();
 
-    // Stay in the current rendered region until 5 successful follows are completed.
+    // Stay in the current rendered region until successBatchSize successful follows are completed.
     if (scrollable && shouldRepositionForNextItem) {
       currentViewTop = Math.min(
         Math.max(0, Number(item.scrollTop ?? FLOW.scanStartScrollTop) || 0),
@@ -170,7 +173,7 @@ async function runFlow() {
       FLOW.tracked += 1;
       FLOW.consecutiveFails = 0;
       successesInCurrentView += 1;
-      if (successesInCurrentView >= successBatchSize) {
+      if (successesInCurrentView >= FLOW.successBatchSize) {
         successesInCurrentView = 0;
         shouldRepositionForNextItem = true;
       }

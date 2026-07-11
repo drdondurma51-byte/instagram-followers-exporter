@@ -48,6 +48,16 @@
             <input type="number" id="followersActionDelayMax" min="1200" max="15000" value="4200" />
           </div>
         </div>
+        <div class="setting-row">
+          <div class="setting">
+            <label>Olumlu (başarılı kaydırma)</label>
+            <input type="number" id="followersSuccessBatchSize" min="1" max="50" value="5" />
+          </div>
+          <div class="setting">
+            <label>Olumsuz (ardışık hata limiti)</label>
+            <input type="number" id="followersConsecutiveFailLimit" min="1" max="50" value="5" />
+          </div>
+        </div>
       </div>
 
       <div class="section">
@@ -96,6 +106,16 @@
           <div class="setting">
             <label>Max gecikme (ms)</label>
             <input type="number" id="likersActionDelayMax" min="1200" max="15000" value="4200" />
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting">
+            <label>Olumlu (başarılı kaydırma)</label>
+            <input type="number" id="likersSuccessBatchSize" min="1" max="50" value="5" />
+          </div>
+          <div class="setting">
+            <label>Olumsuz (ardışık hata limiti)</label>
+            <input type="number" id="likersConsecutiveFailLimit" min="1" max="50" value="5" />
           </div>
         </div>
       </div>
