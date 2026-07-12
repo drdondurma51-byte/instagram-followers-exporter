@@ -10,12 +10,15 @@
   <div class="modal-container">
     <div class="modal-header">
       <h1>🤝 IG Auto Follow</h1>
-      <p>Otomatik takip asistanı</p>
+      <p>Otomatik takip asistanı v3.2</p>
     </div>
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="followers">👥 Takipçiler</button>
       <button class="tab-btn" data-tab="likers">❤️ Beğenenler</button>
+      <button class="tab-btn" data-tab="analiz">📊 Analiz</button>
+      <button class="tab-btn" data-tab="geritakip">👻 Geri Takip</button>
+      <button class="tab-btn" data-tab="log">📋 Günlük</button>
     </div>
 
     <!-- FOLLOWERS TAB -->
@@ -23,6 +26,11 @@
       <div class="section">
         <h2>📋 Kullanıcı Listesi</h2>
         <p class="hint">Instagram'da takipçi/beğeni modalını aç, sonra listeyi yükle.</p>
+        <div class="scroll-steps-row">
+          <label for="followersScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="followersScrollSteps" min="1" max="50" value="15" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
         <div class="action-buttons">
           <button id="loadFollowersList" class="btn btn-info">🔄 Listeyi Yükle</button>
           <button id="refreshFollowersList" class="btn btn-secondary hidden">🔃 Yenile</button>
@@ -41,6 +49,22 @@
             <label>Max gecikme (ms)</label>
             <input type="number" id="followersActionDelayMax" min="1200" max="15000" value="4200" />
           </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting">
+            <label>Olumsuz (ardışık hata limiti)</label>
+            <input type="number" id="followersConsecutiveFailLimit" min="1" max="50" value="5" />
+          </div>
+          <div class="setting">
+            <label>Başarılı işlem limiti</label>
+            <input type="number" id="followersSessionLimit" min="1" max="2000" value="300" />
+          </div>
+        </div>
+        <div class="setting-row single">
+          <label class="checkbox-setting">
+            <input type="checkbox" id="followersConsecutiveFailLimitEnabled" checked />
+            Ardışık hata limiti aktif
+          </label>
         </div>
       </div>
 
@@ -68,6 +92,11 @@
       <div class="section">
         <h2>📋 Kullanıcı Listesi</h2>
         <p class="hint">Instagram'da beğeni listesi modalını aç, sonra yükle.</p>
+        <div class="scroll-steps-row">
+          <label for="likersScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="likersScrollSteps" min="1" max="50" value="15" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
         <div class="action-buttons">
           <button id="loadLikersList" class="btn btn-info">🔄 Listeyi Yükle</button>
           <button id="refreshLikersList" class="btn btn-secondary hidden">🔃 Yenile</button>
@@ -87,6 +116,22 @@
             <input type="number" id="likersActionDelayMax" min="1200" max="15000" value="4200" />
           </div>
         </div>
+        <div class="setting-row">
+          <div class="setting">
+            <label>Olumsuz (ardışık hata limiti)</label>
+            <input type="number" id="likersConsecutiveFailLimit" min="1" max="50" value="5" />
+          </div>
+          <div class="setting">
+            <label>Başarılı işlem limiti</label>
+            <input type="number" id="likersSessionLimit" min="1" max="2000" value="300" />
+          </div>
+        </div>
+        <div class="setting-row single">
+          <label class="checkbox-setting">
+            <input type="checkbox" id="likersConsecutiveFailLimitEnabled" checked />
+            Ardışık hata limiti aktif
+          </label>
+        </div>
       </div>
 
       <div class="section">
@@ -105,6 +150,165 @@
         </div>
         <div class="progress-bar"><div id="likersProgressFill" class="progress-fill"></div></div>
         <div id="likersStatus" class="status info"></div>
+      </div>
+    </div>
+
+    <!-- ANALIZ TAB -->
+    <div id="analiz" class="tab-content">
+      <div class="section">
+        <h2>📊 Takipçi Analizi</h2>
+        <p class="hint">Kendi profilindeki <strong>Takipçiler</strong> modalını aç, ardından tara. Karşılıklı takip ve tek yönlü takipçiler sınıflandırılır.</p>
+        <div class="scroll-steps-row">
+          <label for="analizFollowersScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="analizFollowersScrollSteps" min="1" max="100" value="30" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
+        <div class="action-buttons">
+          <button id="scanFollowersBtn" class="btn btn-info">👥 Takipçileri Tara</button>
+        </div>
+        <div id="analizStatus" class="status info"></div>
+      </div>
+
+      <div id="analizResultsSection" class="section hidden">
+        <h2>📈 Sonuçlar</h2>
+        <div class="progress-container">
+          <div class="stat">
+            <span class="label">Toplam Takipçi</span>
+            <span class="value" id="analizFollowersCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">🤝 Karşılıklı</span>
+            <span class="value" id="analizMutualCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">📥 Karşılıksız</span>
+            <span class="value accent-orange" id="analizOnlyFollowersCount">0</span>
+          </div>
+        </div>
+        <p class="subsection-title">📥 Karşılıksız Takipçiler <span class="hint-inline">(sizi takip ediyor, siz etmiyorsunuz)</span></p>
+        <div id="analizOnlyFollowersList" class="list-preview"></div>
+      </div>
+    </div>
+
+    <!-- GERI TAKIP TAB -->
+    <div id="geritakip" class="tab-content">
+      <div class="section">
+        <h2>👻 Geri Takip Etmeyenler</h2>
+        <p class="hint">Kendi profilindeki <strong>Takip Edilenler</strong> modalını aç, ardından tara. Sizi geri takip etmeyenler listelenir.</p>
+        <p class="hint hint-warn hidden" id="geritakipWarning">⚠️ Tam karşılaştırma için önce <strong>Analiz</strong> sekmesinde takipçileri tarayın.</p>
+        <div class="scroll-steps-row">
+          <label for="analizFollowingScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="analizFollowingScrollSteps" min="1" max="100" value="30" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
+        <div class="action-buttons">
+          <button id="scanFollowingBtn" class="btn btn-info">➡️ Takip Edilenleri Tara</button>
+        </div>
+        <div id="geritakipStatus" class="status info"></div>
+      </div>
+
+      <div id="geritakipResultsSection" class="section hidden">
+        <h2>📈 Sonuçlar</h2>
+        <div class="progress-container">
+          <div class="stat">
+            <span class="label">Takip Edilen</span>
+            <span class="value" id="geritakipFollowingCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">❌ Geri Takip Etmiyor</span>
+            <span class="value accent-red" id="geritakipNFBCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">🤝 Karşılıklı</span>
+            <span class="value" id="geritakipMutualCount">0</span>
+          </div>
+        </div>
+        <p class="subsection-title">❌ Geri Takip Etmeyenler <span class="hint-inline">(takip ediyorsunuz, onlar etmiyor)</span></p>
+        <div id="geritakipList" class="list-preview"></div>
+      </div>
+
+      <!-- UNFOLLOW FLOW -->
+      <div id="unfollowFlowSection" class="hidden">
+        <div class="section">
+          <h2>🚫 Otomatik Takipten Çıkma</h2>
+          <p class="hint">Kendi profilindeki <strong>Takip Edilenler</strong> modalını açık tut, ardından akışı başlat. Listedeki adaylardan blacklist ve whitelist dışında kalanlar işlenir.</p>
+          <div class="setting-row">
+            <div class="setting">
+              <label>Min gecikme (ms)</label>
+              <input type="number" id="unfollowActionDelayMin" min="1500" max="15000" value="2000" />
+            </div>
+            <div class="setting">
+              <label>Max gecikme (ms)</label>
+              <input type="number" id="unfollowActionDelayMax" min="2000" max="20000" value="5000" />
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting">
+              <label>Olumsuz (ardışık hata limiti)</label>
+              <input type="number" id="unfollowConsecutiveFailLimit" min="1" max="20" value="3" />
+            </div>
+            <div class="setting">
+              <label>Başarılı işlem limiti</label>
+              <input type="number" id="unfollowSessionLimit" min="1" max="500" value="50" />
+            </div>
+          </div>
+          <div class="setting-row single">
+            <label class="checkbox-setting">
+              <input type="checkbox" id="unfollowConsecutiveFailLimitEnabled" checked />
+              Ardışık hata limiti aktif
+            </label>
+          </div>
+          <div class="buttons">
+            <button id="startUnfollowBtn" class="btn btn-unfollow">🚫 Takipten Çıkmayı Başlat</button>
+            <button id="stopUnfollowBtn" class="btn btn-stop hidden">⏹️ Durdur</button>
+          </div>
+        </div>
+        <div class="section">
+          <h2>📈 Takipten Çıkma İlerlemesi</h2>
+          <div class="progress-container">
+            <div class="stat"><span class="label">Toplam Aday</span><span class="value" id="unfollowTotalCount">0</span></div>
+            <div class="stat"><span class="label">✅ Çıkıldı</span><span class="value" id="unfollowTrackedCount">0</span></div>
+            <div class="stat"><span class="label">❌ Başarısız</span><span class="value" id="unfollowFailedCount">0</span></div>
+          </div>
+          <div class="progress-bar"><div id="unfollowProgressFill" class="progress-fill progress-fill-unfollow"></div></div>
+          <div id="unfollowStatus" class="status info"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOG TAB -->
+    <div id="log" class="tab-content">
+      <div class="section">
+        <div class="log-header">
+          <h2>✅ Whitelist</h2>
+          <button id="clearWhitelistBtn" class="btn btn-secondary btn-sm">🧹 Sıfırla</button>
+        </div>
+        <p class="hint">Bu listedeki kullanıcılar <strong>hiçbir zaman</strong> otomatik takipten çıkarılmaz. Satır başına bir kullanıcı adı.</p>
+        <textarea id="whitelistInput" class="blacklist-input" placeholder="ornek_kullanici"></textarea>
+        <div class="action-buttons">
+          <button id="saveWhitelistBtn" class="btn btn-info btn-sm">💾 Kaydet</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="log-header">
+          <h2>🚫 Blacklist</h2>
+          <button id="clearBlacklistBtn" class="btn btn-secondary btn-sm">🧹 Sıfırla</button>
+        </div>
+        <p class="hint">Başarısız kullanıcılar otomatik eklenir. Satır başına bir kullanıcı adı olacak şekilde düzenleyebilirsin.</p>
+        <textarea id="blacklistInput" class="blacklist-input" placeholder="ornek_kullanici"></textarea>
+        <div class="action-buttons">
+          <button id="saveBlacklistBtn" class="btn btn-info btn-sm">💾 Kaydet</button>
+        </div>
+      </div>
+
+      <div class="section log-section">
+        <div class="log-header">
+          <h2>📋 Aktivite Günlüğü</h2>
+          <button id="clearLogBtn" class="btn btn-secondary btn-sm">🗑️ Temizle</button>
+        </div>
+        <p class="hint">Takip işlemleri, hatalar ve sistem bildirimleri burada listelenir.</p>
+        <div id="logList" class="log-list"></div>
       </div>
     </div>
 

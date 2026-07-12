@@ -1,7 +1,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("IG Auto Follow installed");
 
-  chrome.storage.local.get(["followersState", "likersState"], (result) => {
+  chrome.storage.local.get(["followersState", "likersState", "blacklist", "unfollowState", "whitelist"], (result) => {
     const next = {};
 
     if (!result.followersState) {
@@ -10,7 +10,10 @@ chrome.runtime.onInstalled.addListener(() => {
         trackedCount: 0,
         failedCount: 0,
         totalToFollow: 0,
-        usersList: []
+        usersList: [],
+        sessionLimit: 300,
+        consecutiveFailLimit: 5,
+        consecutiveFailLimitEnabled: true
       };
     }
 
@@ -20,12 +23,63 @@ chrome.runtime.onInstalled.addListener(() => {
         trackedCount: 0,
         failedCount: 0,
         totalToFollow: 0,
-        usersList: []
+        usersList: [],
+        sessionLimit: 300,
+        consecutiveFailLimit: 5,
+        consecutiveFailLimitEnabled: true
       };
+    }
+
+    if (!result.unfollowState) {
+      next.unfollowState = {
+        isRunning: false,
+        trackedCount: 0,
+        failedCount: 0,
+        totalToUnfollow: 0,
+        sessionLimit: 50,
+        consecutiveFailLimit: 3,
+        consecutiveFailLimitEnabled: true
+      };
+    }
+
+    if (!Array.isArray(result.blacklist)) {
+      next.blacklist = [];
+    }
+
+    if (!Array.isArray(result.whitelist)) {
+      next.whitelist = [];
     }
 
     if (Object.keys(next).length > 0) {
       chrome.storage.local.set(next);
     }
   });
+});
+
+// When the popup is closed, persist flow completion so popup shows correct state on reopen
+chrome.runtime.onMessage.addListener((request) => {
+  const action = request?.action;
+
+  if (action === "flowDone" || action === "flowError") {
+    const mode = request.mode;
+    if (!mode) return;
+    const key = mode === "followers" ? "followersState" : "likersState";
+    chrome.storage.local.get([key], (res) => {
+      const state = { ...(res[key] || {}) };
+      state.isRunning = false;
+      if (request.trackedCount !== undefined) state.trackedCount = request.trackedCount;
+      if (request.failedCount !== undefined) state.failedCount = request.failedCount;
+      chrome.storage.local.set({ [key]: state });
+    });
+  }
+
+  if (action === "unfollowDone" || action === "unfollowError") {
+    chrome.storage.local.get(["unfollowState"], (res) => {
+      const state = { ...(res.unfollowState || {}) };
+      state.isRunning = false;
+      if (request.trackedCount !== undefined) state.trackedCount = request.trackedCount;
+      if (request.failedCount !== undefined) state.failedCount = request.failedCount;
+      chrome.storage.local.set({ unfollowState: state });
+    });
+  }
 });
