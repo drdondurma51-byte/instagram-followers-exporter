@@ -20,6 +20,21 @@ const FLOW = {
   failedUsernames: []
 };
 
+const UFLOW = {
+  isRunning: false,
+  queue: [],
+  processed: 0,
+  tracked: 0,
+  failed: 0,
+  actionDelayMin: 2000,
+  actionDelayMax: 5000,
+  sessionLimit: 50,
+  consecutiveFailLimit: 3,
+  consecutiveFailLimitEnabled: true,
+  consecutiveFails: 0,
+  failedUsernames: []
+};
+
 console.log("🚀 IG Auto Follow content-script loaded");
 
 // ---------------- MESSAGE LISTENER ----------------
@@ -34,6 +49,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (action === "startFlow") {
+    if (UFLOW.isRunning) {
+      sendResponse({ success: false, error: "Takipten çıkma akışı çalışıyor. Önce onu durdur." });
+      return true;
+    }
     startFlow(request)
       .then((res) => sendResponse(res))
       .catch((err) => sendResponse({ success: false, error: err.message }));
@@ -42,6 +61,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (action === "stopFollowing") {
     FLOW.isRunning = false;
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (action === "startUnfollowFlow") {
+    if (FLOW.isRunning) {
+      sendResponse({ success: false, error: "Takip akışı çalışıyor. Önce onu durdur." });
+      return true;
+    }
+    startUnfollowFlow(request)
+      .then((res) => sendResponse(res))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (action === "stopUnfollowing") {
+    UFLOW.isRunning = false;
     sendResponse({ success: true });
     return true;
   }
@@ -379,6 +415,157 @@ function clickFollowButton(username) {
   } catch (_) {
     return false;
   }
+}
+
+// ---------------- UNFOLLOW FLOW ----------------
+async function startUnfollowFlow(payload) {
+  const {
+    users,
+    actionDelayMin = 2000,
+    actionDelayMax = 5000,
+    consecutiveFailLimit = 3,
+    consecutiveFailLimitEnabled = true,
+    sessionLimit = 50
+  } = payload || {};
+
+  if (!Array.isArray(users) || users.length === 0) {
+    return { success: false, error: "Takipten çıkılacak kullanıcı yok." };
+  }
+
+  UFLOW.isRunning = true;
+  UFLOW.queue = users.map((u) => ({ username: u.username, scrollTop: u.scrollTop || 0 }));
+  UFLOW.processed = 0;
+  UFLOW.tracked = 0;
+  UFLOW.failed = 0;
+  UFLOW.actionDelayMin = Number(actionDelayMin);
+  UFLOW.actionDelayMax = Number(actionDelayMax);
+  UFLOW.sessionLimit = Number(sessionLimit);
+  UFLOW.consecutiveFailLimit = Math.max(1, Number(consecutiveFailLimit) || 3);
+  UFLOW.consecutiveFailLimitEnabled = consecutiveFailLimitEnabled !== false;
+  UFLOW.consecutiveFails = 0;
+  UFLOW.failedUsernames = [];
+
+  runUnfollowFlow().catch((e) => {
+    safeSendMessage({ action: "unfollowError", error: e.message });
+    UFLOW.isRunning = false;
+  });
+
+  return { success: true, total: UFLOW.queue.length };
+}
+
+async function runUnfollowFlow() {
+  const scrollable = getModalScrollable();
+
+  while (UFLOW.isRunning && UFLOW.queue.length > 0) {
+    if (UFLOW.tracked >= UFLOW.sessionLimit) {
+      await safeSendMessage({ action: "unfollowStatus", level: "info", message: "Başarılı işlem limiti doldu, akış durduruldu." });
+      UFLOW.isRunning = false;
+      break;
+    }
+
+    const item = UFLOW.queue.shift();
+
+    // Scroll to exact position where this user was collected, then wait for DOM.
+    if (scrollable) {
+      scrollable.scrollTop = Math.min(
+        Math.max(0, Number(item.scrollTop) || 0),
+        Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
+      );
+      await sleep(3000);
+    }
+
+    const ok = await clickUnfollowButton(item.username);
+    UFLOW.processed += 1;
+
+    if (ok) {
+      UFLOW.tracked += 1;
+      UFLOW.consecutiveFails = 0;
+    } else {
+      UFLOW.failed += 1;
+      UFLOW.consecutiveFails += 1;
+      if (item?.username) UFLOW.failedUsernames.push(item.username);
+    }
+
+    await safeSendMessage({
+      action: "updateUnfollowProgress",
+      trackedCount: UFLOW.tracked,
+      failedCount: UFLOW.failed
+    });
+
+    await sleep(rand(UFLOW.actionDelayMin, UFLOW.actionDelayMax));
+
+    if (UFLOW.consecutiveFailLimitEnabled && UFLOW.consecutiveFails >= UFLOW.consecutiveFailLimit) {
+      await safeSendMessage({ action: "unfollowStatus", level: "error", message: "Ardışık hata limiti aşıldı. Akış durduruldu." });
+      UFLOW.isRunning = false;
+      break;
+    }
+  }
+
+  await safeSendMessage({
+    action: "unfollowDone",
+    trackedCount: UFLOW.tracked,
+    failedCount: UFLOW.failed,
+    failedUsernames: Array.from(new Set(UFLOW.failedUsernames))
+  });
+  UFLOW.isRunning = false;
+}
+
+// Click the "Following / Takipte" button for the given username, then confirm unfollow dialog if present.
+async function clickUnfollowButton(username) {
+  try {
+    const root = getActiveModal() || document;
+    const links = root.querySelectorAll('a[href^="/"]');
+
+    for (const link of links) {
+      const href = link.getAttribute("href") || "";
+      const parts = href.split("/").filter(Boolean);
+      if (parts.length !== 1 || parts[0] !== username) continue;
+
+      const button = findButtonNearLink(link);
+      if (!button) continue;
+
+      const text = (button.textContent || "").toLowerCase().trim();
+
+      const isFollowing =
+        text.includes("following") ||
+        text.includes("takiptesin") ||
+        text.includes("takipte") ||
+        text === "takip ediliyor";
+
+      if (!isFollowing) continue;
+
+      button.click();
+      // Wait briefly for any confirmation dialog to appear
+      await sleep(700);
+      clickUnfollowConfirmation();
+      return true;
+    }
+
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Finds and clicks the confirmation "Unfollow / Takipten Çık" button in the dialog.
+function clickUnfollowConfirmation() {
+  const dialogs = document.querySelectorAll('[role="dialog"]');
+  for (let i = dialogs.length - 1; i >= 0; i--) {
+    const buttons = dialogs[i].querySelectorAll("button");
+    for (const btn of buttons) {
+      const t = (btn.textContent || "").toLowerCase().trim();
+      if (
+        t === "unfollow" ||
+        t === "takipten çık" ||
+        t === "takibi bırak" ||
+        t === "takipten çıkmak istediğinizden emin misiniz?"
+      ) {
+        btn.click();
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // ---------------- REPORTING ----------------

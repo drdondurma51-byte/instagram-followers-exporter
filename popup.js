@@ -28,6 +28,16 @@ let likersState = {
   consecutiveFailLimitEnabled: true
 };
 
+let unfollowState = {
+  isRunning: false,
+  trackedCount: 0,
+  failedCount: 0,
+  totalToUnfollow: 0,
+  sessionLimit: 50,
+  consecutiveFailLimit: 3,
+  consecutiveFailLimitEnabled: true
+};
+
 let analysisState = {
   followersList: [],
   followingList: []
@@ -36,20 +46,25 @@ let analysisState = {
 let activeMode = "followers";
 let activityLog = [];
 let blacklist = [];
+let whitelist = [];
 
 // ---------------- INIT ----------------
 document.addEventListener("DOMContentLoaded", () => {
-  chrome.storage.local.get(["followersState", "likersState", "activityLog", "analysisState", "blacklist"], (res) => {
+  chrome.storage.local.get(["followersState", "likersState", "activityLog", "analysisState", "blacklist", "unfollowState", "whitelist"], (res) => {
     if (res.followersState) followersState = { ...followersState, ...res.followersState };
     if (res.likersState) likersState = { ...likersState, ...res.likersState };
     if (Array.isArray(res.activityLog)) activityLog = res.activityLog;
     if (res.analysisState) analysisState = { ...analysisState, ...res.analysisState };
+    if (res.unfollowState) unfollowState = { ...unfollowState, ...res.unfollowState };
     blacklist = normalizeBlacklist(res.blacklist || []);
+    whitelist = normalizeWhitelist(res.whitelist || []);
 
     bindUI();
     applyModeSettingsToInputs("followers");
     applyModeSettingsToInputs("likers");
+    applyUnfollowSettingsToInputs();
     renderBlacklist();
+    renderWhitelist();
     updateAllUI();
     renderLog();
     updateAnalysisUI();
@@ -133,6 +148,35 @@ chrome.runtime.onMessage.addListener((request) => {
 
     appendLog(type, `[${modeLabel(mode)}] ${request.message || ""}`);
   }
+
+  if (action === "updateUnfollowProgress") {
+    unfollowState.trackedCount = request.trackedCount || 0;
+    unfollowState.failedCount = request.failedCount || 0;
+    updateUnfollowUI();
+    saveStates();
+  }
+
+  if (action === "unfollowDone") {
+    unfollowState.isRunning = false;
+    showStatus("unfollowStatus", "✅ Akış tamamlandı", "success");
+    appendLog("success", `✅ [Takipten Çıkma] Akış tamamlandı — ${request.trackedCount || 0} çıkıldı, ${request.failedCount || 0} başarısız`);
+    updateUnfollowUI();
+    saveStates();
+  }
+
+  if (action === "unfollowError") {
+    unfollowState.isRunning = false;
+    showStatus("unfollowStatus", `❌ ${request.error || "Akış hatası"}`, "error");
+    appendLog("error", `❌ [Takipten Çıkma] Hata: ${request.error || "bilinmeyen hata"}`);
+    updateUnfollowUI();
+    saveStates();
+  }
+
+  if (action === "unfollowStatus") {
+    const type = request.level === "error" ? "error" : request.level === "success" ? "success" : "info";
+    showStatus("unfollowStatus", request.message || "", type);
+    appendLog(type, `[Takipten Çıkma] ${request.message || ""}`);
+  }
 });
 
 // ---------------- UI BIND ----------------
@@ -160,6 +204,24 @@ function bindUI() {
   byId("scanFollowersBtn").addEventListener("click", () => loadAnalysisScan("followers"));
   byId("scanFollowingBtn").addEventListener("click", () => loadAnalysisScan("following"));
 
+  byId("startUnfollowBtn").addEventListener("click", startUnfollow);
+  byId("stopUnfollowBtn").addEventListener("click", stopUnfollow);
+  byId("unfollowConsecutiveFailLimitEnabled").addEventListener("change", () => {
+    syncUnfollowSettingsFromInputs();
+    applyUnfollowSettingsToInputs();
+    saveStates();
+  });
+  byId("unfollowConsecutiveFailLimit").addEventListener("change", () => {
+    syncUnfollowSettingsFromInputs();
+    saveStates();
+  });
+  byId("unfollowSessionLimit").addEventListener("change", () => {
+    syncUnfollowSettingsFromInputs();
+    saveStates();
+  });
+
+  byId("saveWhitelistBtn").addEventListener("click", saveWhitelistFromInput);
+  byId("clearWhitelistBtn").addEventListener("click", clearWhitelist);
   byId("saveBlacklistBtn").addEventListener("click", saveBlacklistFromInput);
   byId("clearBlacklistBtn").addEventListener("click", clearBlacklist);
   byId("clearLogBtn").addEventListener("click", clearLog);
@@ -253,6 +315,11 @@ function startMode(mode) {
   const candidates = state.usersList.filter((u) => u.status === "follow");
   if (!candidates.length) {
     showStatus(statusId, "⚠️ Takip adayı yok. Önce listeyi yükle.", "error");
+    return;
+  }
+
+  if (unfollowState.isRunning) {
+    showStatus(statusId, "⚠️ Takipten çıkma akışı aktif. Önce onu durdur.", "error");
     return;
   }
 
@@ -443,6 +510,7 @@ function updateGeriTakipUI() {
   if (followingCount === 0) {
     byId("geritakipResultsSection").classList.add("hidden");
     byId("geritakipWarning").classList.add("hidden");
+    byId("unfollowFlowSection").classList.add("hidden");
     return;
   }
 
@@ -455,6 +523,7 @@ function updateGeriTakipUI() {
     byId("geritakipMutualCount").textContent = "—";
     byId("geritakipResultsSection").classList.remove("hidden");
     byId("geritakipList").innerHTML = '<div class="list-empty">Karşılaştırma için önce Analiz sekmesinde takipçileri tarayın.</div>';
+    byId("unfollowFlowSection").classList.add("hidden");
     return;
   }
 
@@ -464,6 +533,21 @@ function updateGeriTakipUI() {
   byId("geritakipMutualCount").textContent = mutuals.length;
   byId("geritakipResultsSection").classList.remove("hidden");
   renderAnalysisList("geritakipList", notFollowingBack);
+
+  if (notFollowingBack.length > 0) {
+    byId("unfollowFlowSection").classList.remove("hidden");
+    if (!unfollowState.isRunning) {
+      const blacklistSet = new Set(blacklist);
+      const whitelistSet = new Set(whitelist.map((u) => normalizeUsername(u)));
+      unfollowState.totalToUnfollow = notFollowingBack.filter(
+        (u) => !blacklistSet.has(normalizeUsername(u.username)) && !whitelistSet.has(normalizeUsername(u.username))
+      ).length;
+    }
+    applyUnfollowSettingsToInputs();
+    updateUnfollowUI();
+  } else {
+    byId("unfollowFlowSection").classList.add("hidden");
+  }
 }
 
 function renderAnalysisList(elementId, users) {
@@ -535,7 +619,7 @@ function showStatus(elementId, message, type) {
 }
 
 function saveStates() {
-  chrome.storage.local.set({ followersState, likersState, analysisState, blacklist });
+  chrome.storage.local.set({ followersState, likersState, analysisState, blacklist, unfollowState, whitelist });
 }
 
 // ---------------- LOG ----------------
@@ -644,6 +728,192 @@ function addToBlacklist(username, mode) {
   renderBlacklist();
   saveStates();
   appendLog("info", `🚫 [${modeLabel(mode)}] Başarısız kullanıcı blacklist'e eklendi: @${normalized}`);
+}
+
+// ---------------- UNFOLLOW FLOW ----------------
+function startUnfollow() {
+  if (followersState.isRunning || likersState.isRunning) {
+    showStatus("unfollowStatus", "⚠️ Takip akışı aktif. Önce onu durdur.", "error");
+    return;
+  }
+
+  syncUnfollowSettingsFromInputs();
+
+  const { notFollowingBack } = computeAnalysis();
+  if (!notFollowingBack.length) {
+    showStatus("unfollowStatus", "⚠️ Aday yok. Önce Geri Takip taraması yap.", "error");
+    return;
+  }
+
+  const blacklistSet = new Set(blacklist);
+  const whitelistSet = new Set(whitelist.map((u) => normalizeUsername(u)));
+  const candidates = notFollowingBack.filter(
+    (u) => !blacklistSet.has(normalizeUsername(u.username)) && !whitelistSet.has(normalizeUsername(u.username))
+  );
+
+  if (!candidates.length) {
+    showStatus("unfollowStatus", "⚠️ Blacklist / whitelist filtresi sonrası aday kalmadı.", "error");
+    return;
+  }
+
+  const cfg = {
+    actionDelayMin: num("unfollowActionDelayMin", 2000),
+    actionDelayMax: num("unfollowActionDelayMax", 5000),
+    consecutiveFailLimit: num("unfollowConsecutiveFailLimit", 3),
+    consecutiveFailLimitEnabled: !!byId("unfollowConsecutiveFailLimitEnabled")?.checked,
+    sessionLimit: num("unfollowSessionLimit", 50)
+  };
+
+  if (cfg.actionDelayMin > cfg.actionDelayMax) {
+    showStatus("unfollowStatus", "❌ Min gecikme, max gecikmeden büyük olamaz", "error");
+    return;
+  }
+  if (cfg.sessionLimit < 1) {
+    showStatus("unfollowStatus", "❌ Başarılı işlem limiti en az 1 olmalı", "error");
+    return;
+  }
+
+  unfollowState.isRunning = true;
+  unfollowState.trackedCount = 0;
+  unfollowState.failedCount = 0;
+  unfollowState.totalToUnfollow = candidates.length;
+  unfollowState.sessionLimit = cfg.sessionLimit;
+  unfollowState.consecutiveFailLimit = cfg.consecutiveFailLimit;
+  unfollowState.consecutiveFailLimitEnabled = cfg.consecutiveFailLimitEnabled;
+  updateUnfollowUI();
+  saveStates();
+
+  appendLog("info", `▶️ [Takipten Çıkma] Akış başlatıldı — ${candidates.length} kullanıcı, başarılı limit ${cfg.sessionLimit}`);
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs?.length) {
+      unfollowState.isRunning = false;
+      updateUnfollowUI();
+      showStatus("unfollowStatus", "❌ Aktif sekme bulunamadı", "error");
+      appendLog("error", "[Takipten Çıkma] Başlatılamadı: aktif sekme yok");
+      return;
+    }
+
+    chrome.tabs.sendMessage(
+      tabs[0].id,
+      {
+        action: "startUnfollowFlow",
+        users: candidates,
+        actionDelayMin: cfg.actionDelayMin,
+        actionDelayMax: cfg.actionDelayMax,
+        consecutiveFailLimit: cfg.consecutiveFailLimit,
+        consecutiveFailLimitEnabled: cfg.consecutiveFailLimitEnabled,
+        sessionLimit: cfg.sessionLimit
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          unfollowState.isRunning = false;
+          updateUnfollowUI();
+          saveStates();
+          showStatus("unfollowStatus", "❌ Başlatılamadı. Instagram sekmesini yenile.", "error");
+          appendLog("error", "[Takipten Çıkma] Başlatılamadı: content script erişilemedi");
+          return;
+        }
+
+        if (!response?.success) {
+          unfollowState.isRunning = false;
+          updateUnfollowUI();
+          saveStates();
+          showStatus("unfollowStatus", `❌ ${response?.error || "Başlatılamadı"}`, "error");
+          appendLog("error", `[Takipten Çıkma] Başlatılamadı: ${response?.error || "bilinmeyen"}`);
+          return;
+        }
+
+        showStatus("unfollowStatus", `▶️ Akış başladı — ${response.total} kullanıcı`, "success");
+      }
+    );
+  });
+}
+
+function stopUnfollow() {
+  unfollowState.isRunning = false;
+  showStatus("unfollowStatus", "⏹️ Durduruldu", "error");
+  appendLog("info", "⏹️ [Takipten Çıkma] Akış kullanıcı tarafından durduruldu");
+  updateUnfollowUI();
+  saveStates();
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs?.length) return;
+    chrome.tabs.sendMessage(tabs[0].id, { action: "stopUnfollowing" }, () => {
+      if (chrome.runtime.lastError) console.warn("[POPUP] stopUnfollow error:", chrome.runtime.lastError.message);
+    });
+  });
+}
+
+function updateUnfollowUI() {
+  const totalEl = byId("unfollowTotalCount");
+  const trackedEl = byId("unfollowTrackedCount");
+  const failedEl = byId("unfollowFailedCount");
+  const fillEl = byId("unfollowProgressFill");
+  const startBtn = byId("startUnfollowBtn");
+  const stopBtn = byId("stopUnfollowBtn");
+
+  if (totalEl) totalEl.textContent = unfollowState.totalToUnfollow;
+  if (trackedEl) trackedEl.textContent = unfollowState.trackedCount;
+  if (failedEl) failedEl.textContent = unfollowState.failedCount;
+
+  if (fillEl) {
+    const pct = unfollowState.totalToUnfollow
+      ? Math.min(100, (unfollowState.trackedCount / unfollowState.totalToUnfollow) * 100)
+      : 0;
+    fillEl.style.width = `${pct}%`;
+  }
+
+  if (startBtn) startBtn.classList.toggle("hidden", unfollowState.isRunning);
+  if (stopBtn) stopBtn.classList.toggle("hidden", !unfollowState.isRunning);
+}
+
+function syncUnfollowSettingsFromInputs() {
+  unfollowState.consecutiveFailLimit = Math.max(1, num("unfollowConsecutiveFailLimit", 3));
+  unfollowState.sessionLimit = Math.max(1, num("unfollowSessionLimit", 50));
+  unfollowState.consecutiveFailLimitEnabled = !!byId("unfollowConsecutiveFailLimitEnabled")?.checked;
+}
+
+function applyUnfollowSettingsToInputs() {
+  const failLimitInput = byId("unfollowConsecutiveFailLimit");
+  const failEnabledInput = byId("unfollowConsecutiveFailLimitEnabled");
+  const sessionLimitInput = byId("unfollowSessionLimit");
+  if (!failLimitInput || !failEnabledInput || !sessionLimitInput) return;
+  failLimitInput.value = String(Math.max(1, Number(unfollowState.consecutiveFailLimit) || 3));
+  sessionLimitInput.value = String(Math.max(1, Number(unfollowState.sessionLimit) || 50));
+  failEnabledInput.checked = unfollowState.consecutiveFailLimitEnabled !== false;
+  failLimitInput.disabled = !failEnabledInput.checked;
+}
+
+// ---------------- WHITELIST ----------------
+function normalizeWhitelist(list) {
+  const uniq = new Set();
+  for (const item of list || []) {
+    const normalized = normalizeUsername(item);
+    if (normalized) uniq.add(normalized);
+  }
+  return Array.from(uniq);
+}
+
+function renderWhitelist() {
+  const input = byId("whitelistInput");
+  if (!input) return;
+  input.value = whitelist.join("\n");
+}
+
+function saveWhitelistFromInput() {
+  const raw = byId("whitelistInput")?.value || "";
+  whitelist = normalizeWhitelist(raw.split(/\r?\n/));
+  saveStates();
+  renderWhitelist();
+  appendLog("success", `✅ [Whitelist] ${whitelist.length} kullanıcı kaydedildi`);
+}
+
+function clearWhitelist() {
+  whitelist = [];
+  saveStates();
+  renderWhitelist();
+  appendLog("info", "🧹 [Whitelist] Temizlendi");
 }
 
 // ---------------- HELPERS ----------------

@@ -1,7 +1,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("IG Auto Follow installed");
 
-  chrome.storage.local.get(["followersState", "likersState", "blacklist"], (result) => {
+  chrome.storage.local.get(["followersState", "likersState", "blacklist", "unfollowState", "whitelist"], (result) => {
     const next = {};
 
     if (!result.followersState) {
@@ -30,8 +30,24 @@ chrome.runtime.onInstalled.addListener(() => {
       };
     }
 
+    if (!result.unfollowState) {
+      next.unfollowState = {
+        isRunning: false,
+        trackedCount: 0,
+        failedCount: 0,
+        totalToUnfollow: 0,
+        sessionLimit: 50,
+        consecutiveFailLimit: 3,
+        consecutiveFailLimitEnabled: true
+      };
+    }
+
     if (!Array.isArray(result.blacklist)) {
       next.blacklist = [];
+    }
+
+    if (!Array.isArray(result.whitelist)) {
+      next.whitelist = [];
     }
 
     if (Object.keys(next).length > 0) {
@@ -54,6 +70,16 @@ chrome.runtime.onMessage.addListener((request) => {
       if (request.trackedCount !== undefined) state.trackedCount = request.trackedCount;
       if (request.failedCount !== undefined) state.failedCount = request.failedCount;
       chrome.storage.local.set({ [key]: state });
+    });
+  }
+
+  if (action === "unfollowDone" || action === "unfollowError") {
+    chrome.storage.local.get(["unfollowState"], (res) => {
+      const state = { ...(res.unfollowState || {}) };
+      state.isRunning = false;
+      if (request.trackedCount !== undefined) state.trackedCount = request.trackedCount;
+      if (request.failedCount !== undefined) state.failedCount = request.failedCount;
+      chrome.storage.local.set({ unfollowState: state });
     });
   }
 });

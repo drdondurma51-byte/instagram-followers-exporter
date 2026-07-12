@@ -78,6 +78,7 @@ html, body {
 .btn-secondary { background: #fff; color: #1e88e5; border: 1px solid #90caf9; }
 .btn-start { background: #43a047; color: #fff; flex: 1; }
 .btn-stop { background: #e53935; color: #fff; flex: 1; }
+.btn-unfollow { background: #e65100; color: #fff; flex: 1; }
 .hidden { display: none !important; }
 
 .list-preview {
@@ -168,6 +169,9 @@ html, body {
   height: 100%;
   background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
   transition: width 0.3s ease;
+}
+.progress-fill-unfollow {
+  background: linear-gradient(90deg, #e65100 0%, #c62828 100%);
 }
 
 .status {
