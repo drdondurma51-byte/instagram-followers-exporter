@@ -8,7 +8,8 @@ let followersState = {
   failedCount: 0,
   totalToFollow: 0,
   usersList: [],
-  scanStartScrollTop: 0
+  scanStartScrollTop: 0,
+  resumeScrollTop: 0
 };
 
 let likersState = {
@@ -17,7 +18,13 @@ let likersState = {
   failedCount: 0,
   totalToFollow: 0,
   usersList: [],
-  scanStartScrollTop: 0
+  scanStartScrollTop: 0,
+  resumeScrollTop: 0
+};
+
+let analysisState = {
+  followersList: [],
+  followingList: []
 };
 
 let activeMode = "followers";
@@ -25,14 +32,17 @@ let activityLog = [];
 
 // ---------------- INIT ----------------
 document.addEventListener("DOMContentLoaded", () => {
-  chrome.storage.local.get(["followersState", "likersState", "activityLog"], (res) => {
-    if (res.followersState) followersState = res.followersState;
-    if (res.likersState) likersState = res.likersState;
+  chrome.storage.local.get(["followersState", "likersState", "activityLog", "analysisState"], (res) => {
+    if (res.followersState) followersState = { ...followersState, ...res.followersState };
+    if (res.likersState) likersState = { ...likersState, ...res.likersState };
     if (Array.isArray(res.activityLog)) activityLog = res.activityLog;
+    if (res.analysisState) analysisState = { ...analysisState, ...res.analysisState };
 
     bindUI();
     updateAllUI();
     renderLog();
+    updateAnalysisUI();
+    updateGeriTakipUI();
   });
 });
 
@@ -42,13 +52,19 @@ chrome.runtime.onMessage.addListener((request) => {
 
   if (action === "listLoadProgress") {
     const mode = request.mode || activeMode;
-    const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
+    let statusId;
+    if (mode === "analysis-followers") statusId = "analizStatus";
+    else if (mode === "analysis-following") statusId = "geritakipStatus";
+    else statusId = mode === "followers" ? "followersStatus" : "likersStatus";
     showStatus(statusId, `⏳ Kaydırılıyor... ${request.step}/${request.maxSteps} — ${request.collected} kullanıcı bulundu`, "info");
   }
 
   if (action === "updateFollowersProgress") {
     followersState.trackedCount = request.trackedCount || 0;
     followersState.failedCount = request.failedCount || 0;
+    if (request.lastScrollTop !== undefined) {
+      followersState.resumeScrollTop = Number(request.lastScrollTop) || 0;
+    }
     updateFollowersUI();
     saveStates();
   }
@@ -56,6 +72,9 @@ chrome.runtime.onMessage.addListener((request) => {
   if (action === "updateLikersProgress") {
     likersState.trackedCount = request.trackedCount || 0;
     likersState.failedCount = request.failedCount || 0;
+    if (request.lastScrollTop !== undefined) {
+      likersState.resumeScrollTop = Number(request.lastScrollTop) || 0;
+    }
     updateLikersUI();
     saveStates();
   }
@@ -64,6 +83,9 @@ chrome.runtime.onMessage.addListener((request) => {
     const mode = request.mode || activeMode;
     const state = mode === "followers" ? followersState : likersState;
     state.isRunning = false;
+    if (request.lastScrollTop !== undefined) {
+      state.resumeScrollTop = Number(request.lastScrollTop) || 0;
+    }
 
     const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
     showStatus(statusId, "✅ Akış tamamlandı", "success");
@@ -113,6 +135,9 @@ function bindUI() {
   byId("startLikersBtn").addEventListener("click", () => startMode("likers"));
   byId("stopLikersBtn").addEventListener("click", () => stopMode("likers"));
 
+  byId("scanFollowersBtn").addEventListener("click", () => loadAnalysisScan("followers"));
+  byId("scanFollowingBtn").addEventListener("click", () => loadAnalysisScan("following"));
+
   byId("clearLogBtn").addEventListener("click", clearLog);
 }
 
@@ -127,8 +152,14 @@ function switchTab(tab) {
 
 // ---------------- LIST LOAD ----------------
 function loadList(mode) {
+  const state = mode === "followers" ? followersState : likersState;
   const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
   const scrollSteps = num(mode === "followers" ? "followersScrollSteps" : "likersScrollSteps", 15);
+
+  // On refresh, resume scanning from where the flow last left off so scroll order is preserved.
+  const isRefresh = state.usersList.length > 0;
+  const resumeScrollTop = isRefresh ? (state.resumeScrollTop || 0) : 0;
+
   showStatus(statusId, `⏳ Liste yükleniyor... (${scrollSteps} adım)`, "info");
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -140,7 +171,7 @@ function loadList(mode) {
 
     chrome.tabs.sendMessage(
       tabs[0].id,
-      { action: "loadUsersList", mode, scrollSteps },
+      { action: "loadUsersList", mode, scrollSteps, resumeScrollTop },
       (response) => {
         if (chrome.runtime.lastError) {
           showStatus(statusId, "❌ Content script erişilemedi. Instagram sekmesini yenile.", "error");
@@ -154,7 +185,6 @@ function loadList(mode) {
           return;
         }
 
-        const state = mode === "followers" ? followersState : likersState;
         state.usersList = response.users || [];
         state.totalToFollow = state.usersList.filter((u) => u.status === "follow").length;
         state.scanStartScrollTop = Math.max(0, Number(response.scanStartScrollTop) || 0);
@@ -287,6 +317,131 @@ function stopMode(mode) {
   });
 }
 
+// ---------------- ANALYSIS SCAN ----------------
+function loadAnalysisScan(scanType) {
+  const isFollowers = scanType === "followers";
+  const statusId = isFollowers ? "analizStatus" : "geritakipStatus";
+  const mode = isFollowers ? "analysis-followers" : "analysis-following";
+  const scrollSteps = num(isFollowers ? "analizFollowersScrollSteps" : "analizFollowingScrollSteps", 30);
+
+  showStatus(statusId, `⏳ Taranıyor... (${scrollSteps} adım)`, "info");
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs?.length) {
+      showStatus(statusId, "❌ Aktif sekme bulunamadı", "error");
+      return;
+    }
+
+    chrome.tabs.sendMessage(
+      tabs[0].id,
+      { action: "loadUsersList", mode, scrollSteps },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          showStatus(statusId, "❌ Content script erişilemedi. Instagram sekmesini yenile.", "error");
+          return;
+        }
+
+        if (!response?.success) {
+          showStatus(statusId, `❌ ${response?.error || "Tarama başarısız"}`, "error");
+          return;
+        }
+
+        const users = response.users || [];
+        if (isFollowers) {
+          analysisState.followersList = users;
+          showStatus(statusId, `✅ ${users.length} takipçi tarandı`, "success");
+          appendLog("success", `[Analiz] Takipçi taraması tamamlandı: ${users.length} kullanıcı`);
+        } else {
+          analysisState.followingList = users;
+          showStatus(statusId, `✅ ${users.length} kişi tarandı`, "success");
+          appendLog("success", `[Analiz] Takip edilen taraması tamamlandı: ${users.length} kullanıcı`);
+        }
+
+        saveStates();
+        updateAnalysisUI();
+        updateGeriTakipUI();
+      }
+    );
+  });
+}
+
+// Cross-reference followers and following lists.
+// Returns { mutuals, onlyFollowers, notFollowingBack }
+function computeAnalysis() {
+  const followersSet = new Set(analysisState.followersList.map((u) => u.username));
+
+  // From followers list: mutual = you follow them back; onlyFollowers = you don't
+  const mutuals = analysisState.followersList.filter((u) => u.status === "following");
+  const onlyFollowers = analysisState.followersList.filter((u) => u.status === "follow");
+
+  // From following list: those NOT in your followers list don't follow you back
+  const notFollowingBack = analysisState.followingList.filter((u) => !followersSet.has(u.username));
+
+  return { mutuals, onlyFollowers, notFollowingBack };
+}
+
+function updateAnalysisUI() {
+  const count = analysisState.followersList.length;
+  if (count === 0) {
+    byId("analizResultsSection").classList.add("hidden");
+    return;
+  }
+
+  const { mutuals, onlyFollowers } = computeAnalysis();
+  byId("analizFollowersCount").textContent = count;
+  byId("analizMutualCount").textContent = mutuals.length;
+  byId("analizOnlyFollowersCount").textContent = onlyFollowers.length;
+  byId("analizResultsSection").classList.remove("hidden");
+  renderAnalysisList("analizOnlyFollowersList", onlyFollowers);
+}
+
+function updateGeriTakipUI() {
+  const followingCount = analysisState.followingList.length;
+  const followersCount = analysisState.followersList.length;
+
+  if (followingCount === 0) {
+    byId("geritakipResultsSection").classList.add("hidden");
+    byId("geritakipWarning").classList.add("hidden");
+    return;
+  }
+
+  byId("geritakipFollowingCount").textContent = followingCount;
+
+  if (followersCount === 0) {
+    // Can still show following count but can't compute non-reciprocal
+    byId("geritakipWarning").classList.remove("hidden");
+    byId("geritakipNFBCount").textContent = "—";
+    byId("geritakipMutualCount").textContent = "—";
+    byId("geritakipResultsSection").classList.remove("hidden");
+    byId("geritakipList").innerHTML = '<div class="list-empty">Karşılaştırma için önce Analiz sekmesinde takipçileri tarayın.</div>';
+    return;
+  }
+
+  byId("geritakipWarning").classList.add("hidden");
+  const { notFollowingBack, mutuals } = computeAnalysis();
+  byId("geritakipNFBCount").textContent = notFollowingBack.length;
+  byId("geritakipMutualCount").textContent = mutuals.length;
+  byId("geritakipResultsSection").classList.remove("hidden");
+  renderAnalysisList("geritakipList", notFollowingBack);
+}
+
+function renderAnalysisList(elementId, users) {
+  const el = byId(elementId);
+  if (!el) return;
+
+  if (!users.length) {
+    el.innerHTML = '<div class="list-empty">Sonuç bulunamadı. 🎉</div>';
+    return;
+  }
+
+  el.innerHTML = users
+    .map((u) => `
+      <div class="user-item">
+        <span class="user-name">@${escapeHtml(u.username)}</span>
+      </div>`)
+    .join("");
+}
+
 // ---------------- UI UPDATE ----------------
 function updateFollowersUI() {
   byId("followersTotalToFollow").textContent = followersState.totalToFollow;
@@ -331,12 +486,13 @@ function updateAllUI() {
 
 function showStatus(elementId, message, type) {
   const el = byId(elementId);
+  if (!el) return;
   el.textContent = message || "";
   el.className = `status ${type}`;
 }
 
 function saveStates() {
-  chrome.storage.local.set({ followersState, likersState });
+  chrome.storage.local.set({ followersState, likersState, analysisState });
 }
 
 // ---------------- LOG ----------------

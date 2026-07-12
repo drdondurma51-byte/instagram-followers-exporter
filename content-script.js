@@ -14,7 +14,8 @@ const FLOW = {
   sessionLimit: 100,
   consecutiveFailLimit: 5,
   consecutiveFails: 0,
-  scanStartScrollTop: 0
+  scanStartScrollTop: 0,
+  lastScrollTop: 0
 };
 
 console.log("🚀 IG Auto Follow content-script loaded");
@@ -24,7 +25,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const action = request?.action;
 
   if (action === "loadUsersList") {
-    loadUsersList(request.mode, request.scrollSteps || 15)
+    loadUsersList(request.mode, request.scrollSteps || 15, request.resumeScrollTop || 0)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
@@ -48,7 +49,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ---------------- LIST LOAD ----------------
-async function loadUsersList(mode, scrollSteps) {
+async function loadUsersList(mode, scrollSteps, resumeScrollTop = 0) {
   try {
     const modal = getActiveModal();
     if (!modal) {
@@ -59,6 +60,11 @@ async function loadUsersList(mode, scrollSteps) {
     }
 
     const scrollable = findScrollableContainer(modal);
+    // Pre-scroll to the resume position so the scan starts from where we left off.
+    if (resumeScrollTop > 0 && scrollable) {
+      scrollable.scrollTop = resumeScrollTop;
+      await sleep(800);
+    }
     const scanStartScrollTop = Math.max(0, Number(scrollable?.scrollTop) || 0);
     const users = await autoScrollAndCollect(modal, scrollSteps, mode);
     if (!users.length) {
@@ -130,6 +136,7 @@ async function runFlow() {
         Math.max(0, Number(item.scrollTop) || 0),
         Math.max(0, scrollable.scrollHeight - scrollable.clientHeight)
       );
+      FLOW.lastScrollTop = Number(item.scrollTop) || 0;
       await sleep(3000);
     }
 
@@ -375,7 +382,8 @@ async function emitProgress() {
     trackedCount: FLOW.tracked,
     failedCount: FLOW.failed,
     processed: FLOW.processed,
-    remaining: FLOW.queue.length
+    remaining: FLOW.queue.length,
+    lastScrollTop: FLOW.lastScrollTop
   });
 }
 
@@ -385,7 +393,8 @@ async function emitDone() {
     mode: FLOW.mode,
     trackedCount: FLOW.tracked,
     failedCount: FLOW.failed,
-    processed: FLOW.processed
+    processed: FLOW.processed,
+    lastScrollTop: FLOW.lastScrollTop
   });
 }
 

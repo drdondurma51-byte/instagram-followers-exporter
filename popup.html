@@ -10,12 +10,14 @@
   <div class="modal-container">
     <div class="modal-header">
       <h1>🤝 IG Auto Follow</h1>
-      <p>Otomatik takip asistanı v3.1</p>
+      <p>Otomatik takip asistanı v3.2</p>
     </div>
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="followers">👥 Takipçiler</button>
       <button class="tab-btn" data-tab="likers">❤️ Beğenenler</button>
+      <button class="tab-btn" data-tab="analiz">📊 Analiz</button>
+      <button class="tab-btn" data-tab="geritakip">👻 Geri Takip</button>
       <button class="tab-btn" data-tab="log">📋 Günlük</button>
     </div>
 
@@ -128,6 +130,81 @@
         </div>
         <div class="progress-bar"><div id="likersProgressFill" class="progress-fill"></div></div>
         <div id="likersStatus" class="status info"></div>
+      </div>
+    </div>
+
+    <!-- ANALIZ TAB -->
+    <div id="analiz" class="tab-content">
+      <div class="section">
+        <h2>📊 Takipçi Analizi</h2>
+        <p class="hint">Kendi profilindeki <strong>Takipçiler</strong> modalını aç, ardından tara. Karşılıklı takip ve tek yönlü takipçiler sınıflandırılır.</p>
+        <div class="scroll-steps-row">
+          <label for="analizFollowersScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="analizFollowersScrollSteps" min="1" max="100" value="30" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
+        <div class="action-buttons">
+          <button id="scanFollowersBtn" class="btn btn-info">👥 Takipçileri Tara</button>
+        </div>
+        <div id="analizStatus" class="status info"></div>
+      </div>
+
+      <div id="analizResultsSection" class="section hidden">
+        <h2>📈 Sonuçlar</h2>
+        <div class="progress-container">
+          <div class="stat">
+            <span class="label">Toplam Takipçi</span>
+            <span class="value" id="analizFollowersCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">🤝 Karşılıklı</span>
+            <span class="value" id="analizMutualCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">📥 Karşılıksız</span>
+            <span class="value accent-orange" id="analizOnlyFollowersCount">0</span>
+          </div>
+        </div>
+        <p class="subsection-title">📥 Karşılıksız Takipçiler <span class="hint-inline">(sizi takip ediyor, siz etmiyorsunuz)</span></p>
+        <div id="analizOnlyFollowersList" class="list-preview"></div>
+      </div>
+    </div>
+
+    <!-- GERI TAKIP TAB -->
+    <div id="geritakip" class="tab-content">
+      <div class="section">
+        <h2>👻 Geri Takip Etmeyenler</h2>
+        <p class="hint">Kendi profilindeki <strong>Takip Edilenler</strong> modalını aç, ardından tara. Sizi geri takip etmeyenler listelenir.</p>
+        <p class="hint hint-warn hidden" id="geritakipWarning">⚠️ Tam karşılaştırma için önce <strong>Analiz</strong> sekmesinde takipçileri tarayın.</p>
+        <div class="scroll-steps-row">
+          <label for="analizFollowingScrollSteps">Kaydırma adımı</label>
+          <input type="number" id="analizFollowingScrollSteps" min="1" max="100" value="30" />
+          <span class="steps-hint">≈ adım × 20 kullanıcı</span>
+        </div>
+        <div class="action-buttons">
+          <button id="scanFollowingBtn" class="btn btn-info">➡️ Takip Edilenleri Tara</button>
+        </div>
+        <div id="geritakipStatus" class="status info"></div>
+      </div>
+
+      <div id="geritakipResultsSection" class="section hidden">
+        <h2>📈 Sonuçlar</h2>
+        <div class="progress-container">
+          <div class="stat">
+            <span class="label">Takip Edilen</span>
+            <span class="value" id="geritakipFollowingCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">❌ Geri Takip Etmiyor</span>
+            <span class="value accent-red" id="geritakipNFBCount">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">🤝 Karşılıklı</span>
+            <span class="value" id="geritakipMutualCount">0</span>
+          </div>
+        </div>
+        <p class="subsection-title">❌ Geri Takip Etmeyenler <span class="hint-inline">(takip ediyorsunuz, onlar etmiyor)</span></p>
+        <div id="geritakipList" class="list-preview"></div>
       </div>
     </div>
 
