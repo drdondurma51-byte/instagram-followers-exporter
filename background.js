@@ -1,7 +1,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("IG Auto Follow installed");
 
-  chrome.storage.local.get(["followersState", "likersState"], (result) => {
+  chrome.storage.local.get(["followersState", "likersState", "blacklist"], (result) => {
     const next = {};
 
     if (!result.followersState) {
@@ -10,7 +10,10 @@ chrome.runtime.onInstalled.addListener(() => {
         trackedCount: 0,
         failedCount: 0,
         totalToFollow: 0,
-        usersList: []
+        usersList: [],
+        sessionLimit: 300,
+        consecutiveFailLimit: 5,
+        consecutiveFailLimitEnabled: true
       };
     }
 
@@ -20,8 +23,15 @@ chrome.runtime.onInstalled.addListener(() => {
         trackedCount: 0,
         failedCount: 0,
         totalToFollow: 0,
-        usersList: []
+        usersList: [],
+        sessionLimit: 300,
+        consecutiveFailLimit: 5,
+        consecutiveFailLimitEnabled: true
       };
+    }
+
+    if (!Array.isArray(result.blacklist)) {
+      next.blacklist = [];
     }
 
     if (Object.keys(next).length > 0) {

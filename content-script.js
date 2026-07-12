@@ -11,11 +11,13 @@ const FLOW = {
   failed: 0,
   actionDelayMin: 1800,
   actionDelayMax: 4200,
-  sessionLimit: 100,
+  sessionLimit: 300,
   consecutiveFailLimit: 5,
+  consecutiveFailLimitEnabled: true,
   consecutiveFails: 0,
   scanStartScrollTop: 0,
-  lastScrollTop: 0
+  lastScrollTop: 0,
+  failedUsernames: []
 };
 
 console.log("🚀 IG Auto Follow content-script loaded");
@@ -88,7 +90,8 @@ async function startFlow(payload) {
     actionDelayMin = 1800,
     actionDelayMax = 4200,
     consecutiveFailLimit = 5,
-    sessionLimit = 100,
+    consecutiveFailLimitEnabled = true,
+    sessionLimit = 300,
     scanStartScrollTop
   } = payload || {};
 
@@ -106,8 +109,10 @@ async function startFlow(payload) {
   FLOW.actionDelayMax = Number(actionDelayMax);
   FLOW.sessionLimit = Number(sessionLimit);
   FLOW.consecutiveFailLimit = Math.max(1, Number(consecutiveFailLimit) || 5);
+  FLOW.consecutiveFailLimitEnabled = consecutiveFailLimitEnabled !== false;
   FLOW.consecutiveFails = 0;
   FLOW.scanStartScrollTop = Math.max(0, Number(scanStartScrollTop) || 0);
+  FLOW.failedUsernames = [];
 
   runFlow().catch((e) => {
     safeSendMessage({ action: "flowError", mode: FLOW.mode, error: e.message });
@@ -122,8 +127,8 @@ async function runFlow() {
   const scrollable = getModalScrollable();
 
   while (FLOW.isRunning && FLOW.queue.length > 0) {
-    if (FLOW.processed >= FLOW.sessionLimit) {
-      await emitStatus("Session limiti doldu, akış durduruldu.", "info");
+    if (FLOW.tracked >= FLOW.sessionLimit) {
+      await emitStatus("Başarılı işlem limiti doldu, akış durduruldu.", "info");
       FLOW.isRunning = false;
       break;
     }
@@ -147,15 +152,16 @@ async function runFlow() {
     if (ok) {
       FLOW.tracked += 1;
       FLOW.consecutiveFails = 0;
+      await emitProgress();
     } else {
       FLOW.failed += 1;
       FLOW.consecutiveFails += 1;
+      if (item?.username) FLOW.failedUsernames.push(item.username);
+      await emitProgress(item.username);
     }
-
-    await emitProgress();
     await sleep(rand(FLOW.actionDelayMin, FLOW.actionDelayMax));
 
-    if (FLOW.consecutiveFails >= FLOW.consecutiveFailLimit) {
+    if (FLOW.consecutiveFailLimitEnabled && FLOW.consecutiveFails >= FLOW.consecutiveFailLimit) {
       await emitStatus("Ardışık hata limiti aşıldı. Akış durduruldu.", "error");
       FLOW.isRunning = false;
       break;
@@ -376,14 +382,15 @@ function clickFollowButton(username) {
 }
 
 // ---------------- REPORTING ----------------
-async function emitProgress() {
+async function emitProgress(lastFailedUsername = "") {
   await safeSendMessage({
     action: FLOW.mode === "followers" ? "updateFollowersProgress" : "updateLikersProgress",
     trackedCount: FLOW.tracked,
     failedCount: FLOW.failed,
     processed: FLOW.processed,
     remaining: FLOW.queue.length,
-    lastScrollTop: FLOW.lastScrollTop
+    lastScrollTop: FLOW.lastScrollTop,
+    lastFailedUsername
   });
 }
 
@@ -394,7 +401,8 @@ async function emitDone() {
     trackedCount: FLOW.tracked,
     failedCount: FLOW.failed,
     processed: FLOW.processed,
-    lastScrollTop: FLOW.lastScrollTop
+    lastScrollTop: FLOW.lastScrollTop,
+    failedUsernames: Array.from(new Set(FLOW.failedUsernames))
   });
 }
 

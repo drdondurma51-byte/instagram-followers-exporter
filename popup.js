@@ -9,7 +9,10 @@ let followersState = {
   totalToFollow: 0,
   usersList: [],
   scanStartScrollTop: 0,
-  resumeScrollTop: 0
+  resumeScrollTop: 0,
+  sessionLimit: 300,
+  consecutiveFailLimit: 5,
+  consecutiveFailLimitEnabled: true
 };
 
 let likersState = {
@@ -19,7 +22,10 @@ let likersState = {
   totalToFollow: 0,
   usersList: [],
   scanStartScrollTop: 0,
-  resumeScrollTop: 0
+  resumeScrollTop: 0,
+  sessionLimit: 300,
+  consecutiveFailLimit: 5,
+  consecutiveFailLimitEnabled: true
 };
 
 let analysisState = {
@@ -29,16 +35,21 @@ let analysisState = {
 
 let activeMode = "followers";
 let activityLog = [];
+let blacklist = [];
 
 // ---------------- INIT ----------------
 document.addEventListener("DOMContentLoaded", () => {
-  chrome.storage.local.get(["followersState", "likersState", "activityLog", "analysisState"], (res) => {
+  chrome.storage.local.get(["followersState", "likersState", "activityLog", "analysisState", "blacklist"], (res) => {
     if (res.followersState) followersState = { ...followersState, ...res.followersState };
     if (res.likersState) likersState = { ...likersState, ...res.likersState };
     if (Array.isArray(res.activityLog)) activityLog = res.activityLog;
     if (res.analysisState) analysisState = { ...analysisState, ...res.analysisState };
+    blacklist = normalizeBlacklist(res.blacklist || []);
 
     bindUI();
+    applyModeSettingsToInputs("followers");
+    applyModeSettingsToInputs("likers");
+    renderBlacklist();
     updateAllUI();
     renderLog();
     updateAnalysisUI();
@@ -62,6 +73,7 @@ chrome.runtime.onMessage.addListener((request) => {
   if (action === "updateFollowersProgress") {
     followersState.trackedCount = request.trackedCount || 0;
     followersState.failedCount = request.failedCount || 0;
+    if (request.lastFailedUsername) addToBlacklist(request.lastFailedUsername, "followers");
     if (request.lastScrollTop !== undefined) {
       followersState.resumeScrollTop = Number(request.lastScrollTop) || 0;
     }
@@ -72,6 +84,7 @@ chrome.runtime.onMessage.addListener((request) => {
   if (action === "updateLikersProgress") {
     likersState.trackedCount = request.trackedCount || 0;
     likersState.failedCount = request.failedCount || 0;
+    if (request.lastFailedUsername) addToBlacklist(request.lastFailedUsername, "likers");
     if (request.lastScrollTop !== undefined) {
       likersState.resumeScrollTop = Number(request.lastScrollTop) || 0;
     }
@@ -83,6 +96,9 @@ chrome.runtime.onMessage.addListener((request) => {
     const mode = request.mode || activeMode;
     const state = mode === "followers" ? followersState : likersState;
     state.isRunning = false;
+    if (Array.isArray(request.failedUsernames)) {
+      request.failedUsernames.forEach((username) => addToBlacklist(username, mode));
+    }
     if (request.lastScrollTop !== undefined) {
       state.resumeScrollTop = Number(request.lastScrollTop) || 0;
     }
@@ -129,15 +145,23 @@ function bindUI() {
   byId("refreshFollowersList").addEventListener("click", () => loadList("followers"));
   byId("startFollowersBtn").addEventListener("click", () => startMode("followers"));
   byId("stopFollowersBtn").addEventListener("click", () => stopMode("followers"));
+  byId("followersConsecutiveFailLimitEnabled").addEventListener("change", () => onModeSettingsChange("followers"));
+  byId("followersConsecutiveFailLimit").addEventListener("change", () => onModeSettingsChange("followers"));
+  byId("followersSessionLimit").addEventListener("change", () => onModeSettingsChange("followers"));
 
   byId("loadLikersList").addEventListener("click", () => loadList("likers"));
   byId("refreshLikersList").addEventListener("click", () => loadList("likers"));
   byId("startLikersBtn").addEventListener("click", () => startMode("likers"));
   byId("stopLikersBtn").addEventListener("click", () => stopMode("likers"));
+  byId("likersConsecutiveFailLimitEnabled").addEventListener("change", () => onModeSettingsChange("likers"));
+  byId("likersConsecutiveFailLimit").addEventListener("change", () => onModeSettingsChange("likers"));
+  byId("likersSessionLimit").addEventListener("change", () => onModeSettingsChange("likers"));
 
   byId("scanFollowersBtn").addEventListener("click", () => loadAnalysisScan("followers"));
   byId("scanFollowingBtn").addEventListener("click", () => loadAnalysisScan("following"));
 
+  byId("saveBlacklistBtn").addEventListener("click", saveBlacklistFromInput);
+  byId("clearBlacklistBtn").addEventListener("click", clearBlacklist);
   byId("clearLogBtn").addEventListener("click", clearLog);
 }
 
@@ -185,7 +209,9 @@ function loadList(mode) {
           return;
         }
 
-        state.usersList = response.users || [];
+        const loadedUsers = response.users || [];
+        const blacklistSet = new Set(blacklist);
+        state.usersList = loadedUsers.filter((u) => !blacklistSet.has(normalizeUsername(u.username)));
         state.totalToFollow = state.usersList.filter((u) => u.status === "follow").length;
         state.scanStartScrollTop = Math.max(0, Number(response.scanStartScrollTop) || 0);
 
@@ -193,9 +219,11 @@ function loadList(mode) {
         updateAllUI();
         saveStates();
 
-        const msg = `✅ ${state.usersList.length} kullanıcı yüklendi — ${state.totalToFollow} kişi takip edilecek`;
+        const filteredCount = Math.max(0, loadedUsers.length - state.usersList.length);
+        const filteredText = filteredCount ? `, ${filteredCount} blacklist nedeniyle atlandı` : "";
+        const msg = `✅ ${state.usersList.length} kullanıcı yüklendi — ${state.totalToFollow} kişi takip edilecek${filteredText}`;
         showStatus(statusId, msg, "success");
-        appendLog("success", `[${modeLabel(mode)}] ${state.usersList.length} kullanıcı yüklendi, ${state.totalToFollow} takip adayı`);
+        appendLog("success", `[${modeLabel(mode)}] ${state.usersList.length} kullanıcı yüklendi, ${state.totalToFollow} takip adayı${filteredText}`);
       }
     );
   });
@@ -220,6 +248,7 @@ function displayUsersList(mode) {
 function startMode(mode) {
   const state = mode === "followers" ? followersState : likersState;
   const statusId = mode === "followers" ? "followersStatus" : "likersStatus";
+  syncModeSettingsFromInputs(mode);
 
   const candidates = state.usersList.filter((u) => u.status === "follow");
   if (!candidates.length) {
@@ -231,26 +260,37 @@ function startMode(mode) {
     ? {
         actionDelayMin: num("followersActionDelayMin", 1800),
         actionDelayMax: num("followersActionDelayMax", 4200),
-        consecutiveFailLimit: num("followersConsecutiveFailLimit", 5)
+        consecutiveFailLimit: num("followersConsecutiveFailLimit", 5),
+        consecutiveFailLimitEnabled: !!byId("followersConsecutiveFailLimitEnabled")?.checked,
+        sessionLimit: num("followersSessionLimit", 300)
       }
     : {
         actionDelayMin: num("likersActionDelayMin", 1800),
         actionDelayMax: num("likersActionDelayMax", 4200),
-        consecutiveFailLimit: num("likersConsecutiveFailLimit", 5)
+        consecutiveFailLimit: num("likersConsecutiveFailLimit", 5),
+        consecutiveFailLimitEnabled: !!byId("likersConsecutiveFailLimitEnabled")?.checked,
+        sessionLimit: num("likersSessionLimit", 300)
       };
 
   if (cfg.actionDelayMin > cfg.actionDelayMax) {
     showStatus(statusId, "❌ Min gecikme, max gecikmeden büyük olamaz", "error");
     return;
   }
+  if (cfg.sessionLimit < 1) {
+    showStatus(statusId, "❌ Başarılı işlem limiti en az 1 olmalı", "error");
+    return;
+  }
 
   state.isRunning = true;
   state.trackedCount = 0;
   state.failedCount = 0;
+  state.sessionLimit = cfg.sessionLimit;
+  state.consecutiveFailLimit = cfg.consecutiveFailLimit;
+  state.consecutiveFailLimitEnabled = cfg.consecutiveFailLimitEnabled;
   updateAllUI();
   saveStates();
 
-  appendLog("info", `▶️ [${modeLabel(mode)}] Akış başlatıldı — ${candidates.length} kullanıcı`);
+  appendLog("info", `▶️ [${modeLabel(mode)}] Akış başlatıldı — ${candidates.length} kullanıcı, başarılı limit ${cfg.sessionLimit}`);
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs?.length) {
@@ -270,7 +310,8 @@ function startMode(mode) {
         actionDelayMin: cfg.actionDelayMin,
         actionDelayMax: cfg.actionDelayMax,
         consecutiveFailLimit: cfg.consecutiveFailLimit,
-        sessionLimit: 100,
+        consecutiveFailLimitEnabled: cfg.consecutiveFailLimitEnabled,
+        sessionLimit: cfg.sessionLimit,
         scanStartScrollTop: Math.max(0, Number(state.scanStartScrollTop) || 0)
       },
       (response) => {
@@ -444,6 +485,7 @@ function renderAnalysisList(elementId, users) {
 
 // ---------------- UI UPDATE ----------------
 function updateFollowersUI() {
+  applyModeSettingsToInputs("followers");
   byId("followersTotalToFollow").textContent = followersState.totalToFollow;
   byId("followersTrackedCount").textContent = followersState.trackedCount;
   byId("followersFailedCount").textContent = followersState.failedCount;
@@ -462,6 +504,7 @@ function updateFollowersUI() {
 }
 
 function updateLikersUI() {
+  applyModeSettingsToInputs("likers");
   byId("likersTotalToFollow").textContent = likersState.totalToFollow;
   byId("likersTrackedCount").textContent = likersState.trackedCount;
   byId("likersFailedCount").textContent = likersState.failedCount;
@@ -492,7 +535,7 @@ function showStatus(elementId, message, type) {
 }
 
 function saveStates() {
-  chrome.storage.local.set({ followersState, likersState, analysisState });
+  chrome.storage.local.set({ followersState, likersState, analysisState, blacklist });
 }
 
 // ---------------- LOG ----------------
@@ -528,6 +571,79 @@ function clearLog() {
   activityLog = [];
   chrome.storage.local.set({ activityLog: [] });
   renderLog();
+}
+
+function onModeSettingsChange(mode) {
+  syncModeSettingsFromInputs(mode);
+  applyModeSettingsToInputs(mode);
+  saveStates();
+}
+
+function syncModeSettingsFromInputs(mode) {
+  const state = mode === "followers" ? followersState : likersState;
+  const prefix = mode === "followers" ? "followers" : "likers";
+  state.consecutiveFailLimit = Math.max(1, num(`${prefix}ConsecutiveFailLimit`, 5));
+  state.sessionLimit = Math.max(1, num(`${prefix}SessionLimit`, 300));
+  state.consecutiveFailLimitEnabled = !!byId(`${prefix}ConsecutiveFailLimitEnabled`)?.checked;
+}
+
+function applyModeSettingsToInputs(mode) {
+  const state = mode === "followers" ? followersState : likersState;
+  const prefix = mode === "followers" ? "followers" : "likers";
+  const failLimitInput = byId(`${prefix}ConsecutiveFailLimit`);
+  const failEnabledInput = byId(`${prefix}ConsecutiveFailLimitEnabled`);
+  const sessionLimitInput = byId(`${prefix}SessionLimit`);
+  if (!failLimitInput || !failEnabledInput || !sessionLimitInput) return;
+
+  failLimitInput.value = String(Math.max(1, Number(state.consecutiveFailLimit) || 5));
+  sessionLimitInput.value = String(Math.max(1, Number(state.sessionLimit) || 300));
+  failEnabledInput.checked = state.consecutiveFailLimitEnabled !== false;
+  failLimitInput.disabled = !failEnabledInput.checked;
+}
+
+function normalizeBlacklist(list) {
+  const uniq = new Set();
+  for (const item of list || []) {
+    const normalized = normalizeUsername(item);
+    if (normalized) uniq.add(normalized);
+  }
+  return Array.from(uniq);
+}
+
+function normalizeUsername(username) {
+  return String(username || "").trim().replace(/^@+/, "").toLowerCase();
+}
+
+function renderBlacklist() {
+  const input = byId("blacklistInput");
+  if (!input) return;
+  input.value = blacklist.join("\n");
+}
+
+function saveBlacklistFromInput() {
+  const raw = byId("blacklistInput")?.value || "";
+  blacklist = normalizeBlacklist(raw.split(/\r?\n/));
+  saveStates();
+  renderBlacklist();
+  appendLog("success", `✅ [Blacklist] ${blacklist.length} kullanıcı kaydedildi`);
+}
+
+function clearBlacklist() {
+  blacklist = [];
+  saveStates();
+  renderBlacklist();
+  appendLog("info", "🧹 [Blacklist] Temizlendi");
+}
+
+function addToBlacklist(username, mode) {
+  const normalized = normalizeUsername(username);
+  if (!normalized) return;
+  if (blacklist.includes(normalized)) return;
+  blacklist.push(normalized);
+  blacklist.sort();
+  renderBlacklist();
+  saveStates();
+  appendLog("info", `🚫 [${modeLabel(mode)}] Başarısız kullanıcı blacklist'e eklendi: @${normalized}`);
 }
 
 // ---------------- HELPERS ----------------

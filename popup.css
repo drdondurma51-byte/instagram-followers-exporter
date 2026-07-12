@@ -116,6 +116,10 @@ html, body {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+.setting-row.single {
+  grid-template-columns: 1fr;
+  margin-top: 8px;
+}
 .setting { margin-bottom: 0; }
 .setting label { display: block; font-size: 11px; font-weight: 700; margin-bottom: 4px; color: #555; }
 .setting input {
@@ -124,6 +128,17 @@ html, body {
   border-radius: 6px;
   padding: 7px 9px;
   font-size: 12px;
+}
+.checkbox-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+}
+.checkbox-setting input {
+  width: auto;
 }
 
 .progress-container {
@@ -257,6 +272,18 @@ footer {
 .log-info  .log-msg { color: #333; }
 .log-success .log-msg { color: #2e7d32; }
 .log-error   .log-msg { color: #c62828; }
+
+.blacklist-input {
+  width: 100%;
+  min-height: 90px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 8px;
+}
 
 /* ---- Analysis tabs ---- */
 .accent-orange { color: #e65100 !important; }

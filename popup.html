@@ -55,6 +55,16 @@
             <label>Olumsuz (ardışık hata limiti)</label>
             <input type="number" id="followersConsecutiveFailLimit" min="1" max="50" value="5" />
           </div>
+          <div class="setting">
+            <label>Başarılı işlem limiti</label>
+            <input type="number" id="followersSessionLimit" min="1" max="2000" value="300" />
+          </div>
+        </div>
+        <div class="setting-row single">
+          <label class="checkbox-setting">
+            <input type="checkbox" id="followersConsecutiveFailLimitEnabled" checked />
+            Ardışık hata limiti aktif
+          </label>
         </div>
       </div>
 
@@ -111,6 +121,16 @@
             <label>Olumsuz (ardışık hata limiti)</label>
             <input type="number" id="likersConsecutiveFailLimit" min="1" max="50" value="5" />
           </div>
+          <div class="setting">
+            <label>Başarılı işlem limiti</label>
+            <input type="number" id="likersSessionLimit" min="1" max="2000" value="300" />
+          </div>
+        </div>
+        <div class="setting-row single">
+          <label class="checkbox-setting">
+            <input type="checkbox" id="likersConsecutiveFailLimitEnabled" checked />
+            Ardışık hata limiti aktif
+          </label>
         </div>
       </div>
 
@@ -210,6 +230,18 @@
 
     <!-- LOG TAB -->
     <div id="log" class="tab-content">
+      <div class="section">
+        <div class="log-header">
+          <h2>🚫 Blacklist</h2>
+          <button id="clearBlacklistBtn" class="btn btn-secondary btn-sm">🧹 Sıfırla</button>
+        </div>
+        <p class="hint">Başarısız kullanıcılar otomatik eklenir. Satır başına bir kullanıcı adı olacak şekilde düzenleyebilirsin.</p>
+        <textarea id="blacklistInput" class="blacklist-input" placeholder="ornek_kullanici"></textarea>
+        <div class="action-buttons">
+          <button id="saveBlacklistBtn" class="btn btn-info btn-sm">💾 Kaydet</button>
+        </div>
+      </div>
+
       <div class="section log-section">
         <div class="log-header">
           <h2>📋 Aktivite Günlüğü</h2>
